@@ -1,0 +1,28 @@
+wordCutOff = 0
+maxIter = 10
+batchSize = 1
+adaAlpha = 0.01
+dropProb = 0
+hiddenSize = -1
+wordEmbSize = 50
+otherEmbSize = 10
+entity_embsize = 20
+context_embsize = -1
+evalPerIter = 1
+wordEmbFineTune = false
+abbrPath = /home/fox/data/common_english_abbr.txt
+puncPath = /home/fox/data/english_punctuation.txt
+sent_window = 1
+verboseIter = 1
+embFile = /home/fox/data/glove.6B.50d.bin
+attention = false
+wordnet = 
+brown = 
+channelMode = 55
+wordcontext = 0
+rnnHiddenSize = 50
+removePool = 5
+charactercontext = 0
+
+
+
