@@ -26,11 +26,10 @@ public:
 	}*/
 
 	string id;
-	string title;
-	string abstract;
 	vector<Entity> entities;
 	vector<Relation> relations;
 	vector<fox::Sent> sents;
+	int maxParagraphId;
 };
 
 #endif /* DOCUMENT_H_ */

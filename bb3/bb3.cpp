@@ -15,9 +15,12 @@
 #include "N3L.h"
 #include "Argument_helper.h"
 #include "Options.h"
-#include "WordNet.h"
 #include "Tool.h"
-#include "NNbb_rnn.h"
+
+
+#include "NNbb3.h"
+
+
 
 using namespace std;
 
@@ -36,12 +39,9 @@ int main(int argc, char **argv)
 	string devFile;
 	string testFile;
 	string outputFile;
-	string otherDir; // use other to supplement training data
 	string trainNlpFile;
 	string devNlpFile;
 	string testNlpFile;
-	string otherNlpDir;
-	bool usedev = false;
 
 
 
@@ -49,24 +49,22 @@ int main(int argc, char **argv)
 	ah.new_named_string("train", "", "", "", trainFile);
 	ah.new_named_string("dev", "", "", "", devFile);
 	ah.new_named_string("test", "", "", "", testFile);
-	ah.new_named_string("other", "", "", "", otherDir);
 	ah.new_named_string("option", "", "", "", optionFile);
 	ah.new_named_string("output", "", "", "", outputFile);
 	ah.new_named_string("trainnlp", "", "", "", trainNlpFile);
 	ah.new_named_string("devnlp", "", "", "", devNlpFile);
 	ah.new_named_string("testnlp", "", "", "", testNlpFile);
-	ah.new_named_string("othernlp", "", "", "", otherNlpDir);
-	ah.new_flag("usedev", "", "", usedev);
+
+
 	ah.process(argc, argv);
 	cout<<"train file: " <<trainFile <<endl;
 	cout<<"dev file: "<<devFile<<endl;
 	cout<<"test file: "<<testFile<<endl;
-	cout<<"other Dir: "<<otherDir<<endl;
+
 	cout<<"trainnlp file: "<<trainNlpFile<<endl;
 	cout<<"devnlp file: "<<devNlpFile<<endl;
 	cout<<"testnlp file: "<<testNlpFile<<endl;
-	cout<<"othernlp file: "<<otherNlpDir<<endl;
-	cout<<"usedev: "<<usedev<<endl;
+
 
 	Options options;
 	options.load(optionFile);
@@ -76,20 +74,13 @@ int main(int argc, char **argv)
 
 	options.showOptions();
 
-/*	if((options.channelMode & 2) == 2) {
-		if(wninit()) {
-			cout<<"warning: can't init wordnet"<<endl;
-			exit(0);
-		}
-	}*/
-
 	Tool tool(options);
 
-	NNbb3_rnn nnbb3(options);
-	//NNbb3 nnbb3(options);
 
-	nnbb3.train(usedev, trainFile, devFile, testFile, otherDir, tool,
-			trainNlpFile, devNlpFile, testNlpFile, otherNlpDir);
+	NNbb3 nnbb(options);
+
+	nnbb.trainAndTest(trainFile, devFile, testFile, tool,
+			trainNlpFile, devNlpFile, testNlpFile);
 
 
 

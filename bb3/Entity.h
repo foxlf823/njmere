@@ -9,6 +9,7 @@
 #define ENTITY_H_
 
 #include <string>
+#include <sstream>
 
 using namespace std;
 
@@ -44,6 +45,33 @@ public:
 		sentIdx = -1;
 
 	}
+
+	bool equals(const Entity& another) const {
+		if(type == another.type && begin == another.begin && end == another.end)
+			return true;
+		else
+			return false;
+	}
+
+	  void setId(int _id) {
+		stringstream ss;
+		ss<<"T"<<_id;
+		id = ss.str();
+	  }
+
+		bool equalsBoundary(const Entity& another) const {
+			if(begin == another.begin && end == another.end)
+				return true;
+			else
+				return false;
+		}
+
+		bool equalsType(const Entity& another) const {
+			if(type == another.type)
+				return true;
+			else
+				return false;
+		}
 };
 
 

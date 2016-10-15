@@ -34,8 +34,6 @@ public:
   int wordcontext;
   int wordEmbSize;
   int otherEmbSize;
-  int entity_embsize;
-  int context_embsize;
   int hiddenSize;
   int rnnHiddenSize;
 
@@ -46,17 +44,10 @@ public:
   string output;
   string embFile;
 
-  bool attention;
+  int beamSize1;
+  int beamSize2;
 
-  string wordnet;
-  string brown;
-
-  int channelMode; // 000001-word, 000010-wordnet, 000100-brown, 001000-bigram, 010000-pos, 100000-sst
-
-  bool useDiscrete;
-  int removePool;
-
-  int charactercontext;
+  int poolType;
 
   Options() {
     wordCutOff = 0;
@@ -71,8 +62,6 @@ public:
     wordcontext = 0;
     wordEmbSize = 50;
     otherEmbSize = 50;
-    entity_embsize = 50;
-    context_embsize = 100;
     hiddenSize = 150;
     rnnHiddenSize = 100;
 
@@ -88,17 +77,10 @@ public:
     output = "";
     embFile = "";
 
-    attention = false;
+    beamSize1 = 1;
+    beamSize2 = 1;
 
-    wordnet = "";
-    brown = "";
-
-    channelMode = 1;
-
-    useDiscrete = false;
-    removePool = 0;
-
-    charactercontext = 0;
+    poolType = 0;
   }
 
   Options(const Options& options) {
@@ -114,8 +96,6 @@ public:
 	  wordcontext = options.wordcontext;
 	  wordEmbSize = options.wordEmbSize;
 	  otherEmbSize = options.otherEmbSize;
-		entity_embsize = options.entity_embsize;
-		context_embsize = options.context_embsize;
 		hiddenSize = options.hiddenSize;
 		rnnHiddenSize = options.rnnHiddenSize;
 
@@ -132,17 +112,10 @@ public:
 		output = options.output;
 		embFile = options.embFile;
 
-		attention = options.attention;
+		beamSize1 = options.beamSize1;
+		beamSize2 = options.beamSize2;
 
-		wordnet = options.wordnet;
-		brown = options.brown;
-
-		channelMode = options.channelMode;
-
-		useDiscrete = options.useDiscrete;
-		removePool = options.removePool;
-
-		charactercontext = options.charactercontext;
+		poolType = options.poolType;
   }
 
 /*  virtual ~Options() {
@@ -182,10 +155,6 @@ public:
         wordEmbSize = atoi(pr.second.c_str());
       else if(pr.first == "otherEmbSize")
     	  otherEmbSize = atoi(pr.second.c_str());
-      else if (pr.first == "entity_embsize")
-    	  entity_embsize = atoi(pr.second.c_str());
-      else if (pr.first == "context_embsize")
-    	  context_embsize = atoi(pr.second.c_str());
         
 
       else if(pr.first == "evalPerIter")
@@ -209,20 +178,13 @@ public:
       else if(pr.first == "embFile")
           embFile = pr.second;
 
-      else if(pr.first == "attention")
-    	  attention = (pr.second == "true") ? true : false;
-      else if(pr.first == "wordnet")
-    	  wordnet = pr.second;
-      else if(pr.first == "brown")
-    	  brown = pr.second;
-      else if(pr.first== "channelMode")
-    	  channelMode = atoi(pr.second.c_str());
-      else if(pr.first == "useDiscrete")
-    	  useDiscrete = (pr.second == "true") ? true:false;
-      else if (pr.first == "removePool")
-    	  removePool = atoi(pr.second.c_str());
-      else if(pr.first == "charactercontext")
-    	  charactercontext = atoi(pr.second.c_str());
+      else if(pr.first == "beamSize1")
+    	  beamSize1 = atoi(pr.second.c_str());
+      else if(pr.first == "beamSize2")
+    	  beamSize2 = atoi(pr.second.c_str());
+
+      else if(pr.first == "poolType")
+    	  poolType = atoi(pr.second.c_str());
     }
   }
 
@@ -242,8 +204,6 @@ public:
     std::cout<<"wordcontext = " << wordcontext << endl;
     std::cout << "wordEmbSize = " << wordEmbSize << std::endl;
     std::cout<<"otherEmbSize = "<<otherEmbSize << std::endl;
-    std::cout << "entity_embsize = " << entity_embsize << std::endl;
-    std::cout << "context_embsize = " << context_embsize << std::endl;
 
     cout<< "evalPerIter = " << evalPerIter << endl;
     cout<< "wordEmbFineTune = "<<wordEmbFineTune<<endl;
@@ -256,15 +216,10 @@ public:
     cout<<"output = "<<output<<endl;
     cout<<"embFile = "<<embFile<<endl;
 
-	cout<<"attention = "<<attention<<endl;
+    cout<<"beamSize1 = "<<beamSize1<<endl;
+    cout<<"beamSize2 = "<<beamSize2<<endl;
 
-	cout<<"wordnet = "<<wordnet<<endl;
-	cout<<"brown = "<<brown<<endl;
-	cout<<"channelMode = "<<channelMode<<endl;
-	cout<<"useDiscrete = "<<useDiscrete<<endl;
-	cout<<"removePool = "<<removePool<<endl;
-
-	cout<<"charactercontext = "<<charactercontext<<endl;
+    cout<<"poolType = "<<poolType<<endl;
   }
 
   void load(const std::string& infile) {

@@ -7,71 +7,54 @@
 
 #ifndef SRC_EXAMPLE_H_
 #define SRC_EXAMPLE_H_
-
-#include "Feature.h"
+#include <vector>
+#include "N3L.h"
 
 using namespace std;
 
 class Example {
 
 public:
-  vector<int> m_labels;
+	//used by ner
+  vector<int> _nerLabels;
+  int nerGoldLabel;
 
-  vector<int> m_before;
-  vector<int> m_entityFormer;
-  vector<int> m_entityLatter;
-  vector<int> m_middle;
-  vector<int> m_after;
+  vector<int> _words;
+  vector<int> _postags;
+  vector< vector<int> > _seq_chars;
 
-  vector<int> m_before_wordnet;
-  vector<int> m_middle_wordnet;
-  vector<int> m_after_wordnet;
-  vector<int> m_entityFormer_wordnet;
-  vector<int> m_entityLatter_wordnet;
+  int _prior_ner;
 
-  vector<int> m_before_brown;
-  vector<int> m_middle_brown;
-  vector<int> m_after_brown;
-  vector<int> m_entityFormer_brown;
-  vector<int> m_entityLatter_brown;
+  int _current_idx;
 
-  vector<int> m_before_bigram;
-  vector<int> m_middle_bigram;
-  vector<int> m_after_bigram;
-  vector<int> m_entityFormer_bigram;
-  vector<int> m_entityLatter_bigram;
+  // used by relation
+  bool _isRelation;
 
-  vector<int> m_before_pos;
-  vector<int> m_middle_pos;
-  vector<int> m_after_pos;
-  vector<int> m_entityFormer_pos;
-  vector<int> m_entityLatter_pos;
+  vector<int> _relLabels;
+  int relGoldLabel;
 
-  vector<int> m_before_sst;
-  vector<int> m_middle_sst;
-  vector<int> m_after_sst;
-  vector<int> m_entityFormer_sst;
-  vector<int> m_entityLatter_sst;
+  vector<int> _deps;
+  vector<int> _ners;
 
-  vector<int> m_sparseFeature;
+  vector<int> _idxOnSDP_E12A;
+  vector<int> _idxOnSDP_E22A;
 
-  vector<Feature> m_features; // one feature corresponds to a word
-  int formerTkBegin; // the beginning of former
-  int formerTkEnd; // the end of former (include)
-  int latterTkBegin; // the beginning of latter
-  int latterTkEnd; // the end of latter (include)
+  hash_set<int> _idx_e1;
+  hash_set<int> _idx_e2;
 
-  // for output
-  string idBacteria;
-  string idLocation;
+  vector<int> _between_words;
 
 public:
-  Example()
+  Example(bool isrel)
   {
-	  formerTkBegin = -1;
-	  formerTkEnd = -1;
-	  latterTkBegin = -1;
-	  latterTkEnd = -1;
+	  nerGoldLabel = -1;
+	  _prior_ner = -1;
+	  _current_idx = -1;
+
+	  _isRelation = isrel;
+
+	  relGoldLabel = -1;
+
   }
 /*  virtual ~Example()
   {

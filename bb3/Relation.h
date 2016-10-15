@@ -9,6 +9,7 @@
 #define RELATION_H_
 
 #include <string>
+#include <sstream>
 
 using namespace std;
 
@@ -16,9 +17,35 @@ using namespace std;
 class Relation {
 
 public:
+	string id;
 	  string idBacteria;
 	  string idLocation;
 
+	  Entity bacteria;
+	  Entity location;
+
+	  bool equals(const Relation& another) const {
+		  if(bacteria.equals(another.bacteria) && location.equals(another.location))
+			  return true;
+		  else
+			  return false;
+	  }
+
+	  void setId(int _id) {
+		stringstream ss;
+		ss<<"R"<<_id;
+		id = ss.str();
+	  }
+
+	  void setBacId(const string& bacId) {
+		  idBacteria = bacId;
+		  bacteria.id = bacId;
+	  }
+
+	  void setLocId(const string& locId) {
+		  idLocation = locId;
+		  location.id = locId;
+	  }
 };
 
 
