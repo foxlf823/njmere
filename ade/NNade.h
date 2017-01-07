@@ -1,6 +1,6 @@
 
-#ifndef NNADE3_H_
-#define NNADE3_H_
+#ifndef NNADE_H_
+#define NNADE_H_
 
 #include <iosfwd>
 #include "Options.h"
@@ -17,21 +17,10 @@
 #include "Punctuation.h"
 #include "Word2Vec.h"
 #include "utils.h"
+#include "Classifier.h"
 #include "Example.h"
 #include "BestPerformance.h"
-#include "Classifier3_base.h"
-#include "Classifier3_char.h"
-#include "Classifier3_pos.h"
-#include "Classifier3_ner.h"
 
-#include "Classifier3_label.h"
-#include "Classifier3_dep.h"
-#include "Classifier3_entity.h"
-
-#include "Classifier3_nosdp.h"
-#include "Classifier3_nojoint.h"
-
-#include "Classifier3.h"
 
 using namespace nr;
 using namespace std;
@@ -39,7 +28,7 @@ using namespace std;
 // a implement of ACL 2016 end-to-end relation extraction
 // use relation f1 on the development set
 
-class NNade3 {
+class NNade {
 public:
 	Options m_options;
 
@@ -47,7 +36,6 @@ public:
 	Alphabet m_posAlphabet;
 	Alphabet m_nerAlphabet;
 	Alphabet m_depAlphabet;
-	Alphabet m_charAlphabet;
 
 	string unknownkey;
 	string nullkey;
@@ -55,20 +43,11 @@ public:
 #if USE_CUDA==1
   Classifier<gpu> m_classifier;
 #else
-  //Classifier3_base<cpu> m_classifier;
-  //Classifier3_char<cpu> m_classifier;
-  //Classifier3_pos<cpu> m_classifier;
-  //Classifier3_ner<cpu> m_classifier;
-  //Classifier3_label<cpu> m_classifier;
-  //Classifier3_dep<cpu> m_classifier;
-  //Classifier3_entity<cpu> m_classifier;
-  //Classifier3_nosdp<cpu> m_classifier;
-  //Classifier3_nojoint<cpu> m_classifier;
-  Classifier3<cpu> m_classifier;
+  Classifier<cpu> m_classifier;
 #endif
 
 
-  NNade3(const Options &options):m_options(options) {
+  NNade(const Options &options):m_options(options) {
 		unknownkey = "-#unknown#-";
 		nullkey = "-#null#-";
 	}
@@ -91,10 +70,6 @@ public:
 		m_depAlphabet.clear();
 		m_depAlphabet.from_string(unknownkey);
 		m_depAlphabet.from_string(nullkey);
-
-		m_charAlphabet.clear();
-		m_charAlphabet.from_string(unknownkey);
-		m_charAlphabet.from_string(nullkey);
 
 		// ner alphabet should be initialized directly, not from the dataset
 		m_nerAlphabet.clear();
@@ -167,8 +142,6 @@ public:
 		randomInitNrmat(nerEmb, m_nerAlphabet, m_options.otherEmbSize, 1020);
 		NRMat<dtype> depEmb;
 		randomInitNrmat(depEmb, m_depAlphabet, m_options.otherEmbSize, 1030);
-		NRMat<dtype> charEmb;
-		randomInitNrmat(charEmb, m_charAlphabet, m_options.otherEmbSize, 1040);
 
 		vector<Example> trainExamples;
 		initialTrainingExamples(tool, annotatedTrain, processedTrain, trainExamples);
@@ -187,9 +160,6 @@ public:
 
 		m_classifier._ner.initial(nerEmb);
 		m_classifier._ner.setEmbFineTune(true);
-
-		m_classifier._char.initial(charEmb);
-		m_classifier._char.setEmbFineTune(true);
 
 
 		static vector<Example> subExamples;
@@ -218,7 +188,6 @@ public:
 
 					dtype cost = m_classifier.processNer(subExamples, curUpdateIter);
 
-					//m_classifier.checkgradsNer(subExamples, curUpdateIter);
 					m_classifier.updateParams(m_options.regParameter, m_options.adaAlpha, m_options.adaEps);
 
 
@@ -242,7 +211,7 @@ public:
 						int curUpdateIter = iter * trainExamples.size() + exampleIdx;
 
 						dtype cost = m_classifier.processRel(subExamples, curUpdateIter);
-						//m_classifier.checkgradsRel(subExamples, curUpdateIter);
+
 						m_classifier.updateParams(m_options.regParameter, m_options.adaAlpha, m_options.adaEps);
 
 
@@ -269,20 +238,17 @@ public:
 		    		averageUnkownEmb(m_depAlphabet, m_classifier._dep, m_options.otherEmbSize);
 
 		    		averageUnkownEmb(m_nerAlphabet, m_classifier._ner, m_options.otherEmbSize);
-
-
-		    		averageUnkownEmb(m_charAlphabet, m_classifier._char, m_options.otherEmbSize);
 		    	}
 
-		    	BestPerformance currentDev = evaluateOnDev(tool, annotatedDev, processedDev, iter);
+		    	BestPerformance currentDev = evaluateOnDev(tool, annotatedDev, processedDev);
 
-/*				if (currentDev.dev_f1Relation > best) {
+				if (currentDev.dev_f1Relation > best) {
 					cout << "Exceeds best performance of " << best << endl;
 					best = currentDev.dev_f1Relation;
 
 					BestPerformance currentTest = test(tool, annotatedTest, processedTest);
 
-
+					// record the best performance for this group
 					ret.dev_pEntity = currentDev.dev_pEntity;
 					ret.dev_rEntity = currentDev.dev_rEntity;
 					ret.dev_f1Entity = currentDev.dev_f1Entity;
@@ -296,7 +262,7 @@ public:
 					ret.test_rRelation = currentTest.test_rRelation;
 					ret.test_f1Relation = currentTest.test_f1Relation;
 
-				}*/
+				}
 
 		    }
 
@@ -380,8 +346,7 @@ public:
 
 	}
 
-	BestPerformance evaluateOnDev(Tool& tool, vector<ADEsentence> & annotated,
-			vector<fox::Sent> & processed, int iter) {
+	BestPerformance evaluateOnDev(Tool& tool, vector<ADEsentence> & annotated, vector<fox::Sent> & processed) {
 
 		BestPerformance ret;
 
@@ -389,6 +354,7 @@ public:
     	int ctPredictEntity = 0;
     	int ctCorrectEntity = 0;
     	int ctGoldRelation = 0, ctPredictRelation = 0, ctCorrectRelation = 0;
+
 
 		for(int sentIdx=0;sentIdx<processed.size();sentIdx++) {
 			const fox::Sent & sent = processed[sentIdx];
@@ -398,8 +364,6 @@ public:
 
 			vector<Entity> anwserEntities;
 			vector<Relation> anwserRelations;
-
-	    	vector<Relation> fnRelations;
 
 			for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
 				const fox::Token& token = sent.tokens[tokenIdx];
@@ -470,80 +434,24 @@ public:
 			ctGoldEntity += annotatedSent.entities.size();
 			ctPredictEntity += anwserEntities.size();
 			for(int i=0;i<anwserEntities.size();i++) {
-				int k=-1;
-				int j=0;
-				for(;j<annotatedSent.entities.size();j++) {
-					if(anwserEntities[i].equalsBoundary(annotatedSent.entities[j])) {
-						if(anwserEntities[i].equalsType(annotatedSent.entities[j])) {
-							ctCorrectEntity ++;
-							break;
-						} else {
-							k = j;
-							break;
-						}
+				for(int j=0;j<annotatedSent.entities.size();j++) {
+					if(anwserEntities[i].equals(annotatedSent.entities[j])) {
+						ctCorrectEntity ++;
+						break;
 					}
 				}
-
-
-			}
-
-			for(int i=0;i<annotatedSent.entities.size();i++) {
-				int k=-1;
-				int j=0;
-				for(;j<anwserEntities.size();j++) {
-					if(annotatedSent.entities[i].equalsBoundary(anwserEntities[j])) {
-						if(annotatedSent.entities[i].equalsType(anwserEntities[j])) {
-							break;
-						} else {
-							k = j;
-							break;
-						}
-					}
-
-				}
-
-
 			}
 
 			ctGoldRelation += annotatedSent.relations.size();
 			ctPredictRelation += anwserRelations.size();
 			for(int i=0;i<anwserRelations.size();i++) {
-				int j=0;
-				for(;j<annotatedSent.relations.size();j++) {
+				for(int j=0;j<annotatedSent.relations.size();j++) {
 					if(anwserRelations[i].equals(annotatedSent.relations[j])) {
 						ctCorrectRelation ++;
 						break;
 					}
 				}
-
 			}
-
-			for(int i=0;i<annotatedSent.relations.size();i++) {
-				int j=0;
-				for(;j<anwserRelations.size();j++) {
-					if(annotatedSent.relations[i].equals(anwserRelations[j])) {
-						break;
-					}
-				}
-
-				if(j>=anwserRelations.size()) {
-					fnRelations.push_back(annotatedSent.relations[i]);
-				}
-			}
-
-			for(int i=0;i<fnRelations.size();i++) {
-				bool entity1Matched = false;
-				bool entity2Matched = false;
-				for(int j=0;j<anwserEntities.size();j++) {
-					if(entity1Matched==false && fnRelations[i].entity1.equals(anwserEntities[j])) {
-						entity1Matched = true;
-					} else if(entity2Matched==false && fnRelations[i].entity2.equals(anwserEntities[j])) {
-						entity2Matched = true;
-					}
-				}
-
-			}
-
 
 		} // sent
 
@@ -737,9 +645,6 @@ public:
 		for(int i=0;i<sent.tokens.size();i++) {
 			eg._words.push_back(featureName2ID(m_wordAlphabet, feature_word(sent.tokens[i])));
 			eg._postags.push_back(featureName2ID(m_posAlphabet, feature_pos(sent.tokens[i])));
-			vector<int> chars;
-			featureName2ID(m_charAlphabet, feature_character(sent.tokens[i]), chars);
-			eg._seq_chars.push_back(chars);
 		}
 
 		eg._prior_ner = featureName2ID(m_nerAlphabet, lastNerLabel);
@@ -759,17 +664,12 @@ public:
 
 		int bacTkEnd = -1;
 		int locTkEnd = -1;
-		const Entity& former = Disease.begin<Chemical.begin? Disease:Chemical;
-		const Entity& latter = Disease.begin<Chemical.begin ? Chemical:Disease;
 
 		for(int i=0;i<sent.tokens.size();i++) {
 			const fox::Token& token = sent.tokens[i];
 
 			eg._words.push_back(featureName2ID(m_wordAlphabet, feature_word(token)));
 			eg._postags.push_back(featureName2ID(m_posAlphabet, feature_pos(token)));
-			vector<int> chars;
-			featureName2ID(m_charAlphabet, feature_character(sent.tokens[i]), chars);
-			eg._seq_chars.push_back(chars);
 			eg._deps.push_back(featureName2ID(m_depAlphabet, feature_dep(token)));
 			eg._ners.push_back(featureName2ID(m_nerAlphabet, labelSequence[i]));
 
@@ -791,14 +691,6 @@ public:
 				else if(locTkEnd < i /*&& sent.tokens[i].depGov!=-1*/)
 					locTkEnd = i;
 			}
-
-			if(isTokenBetweenTwoEntities(token, former, latter)) {
-				eg._between_words.push_back(i);
-			}
-		}
-
-		if(eg._between_words.size()==0) {
-			eg._between_words.push_back(featureName2ID(m_wordAlphabet, nullkey));
 		}
 
 		assert(bacTkEnd!=-1);
@@ -836,7 +728,6 @@ public:
 		hash_map<string, int> word_stat;
 		hash_map<string, int> pos_stat;
 		hash_map<string, int> dep_stat;
-		hash_map<string, int> char_stat;
 
 		for(int i=0;i<processed.size();i++) {
 			fox::Sent & sent = processed[i];
@@ -847,10 +738,6 @@ public:
 
 				string pos = feature_pos(sent.tokens[j]);
 				pos_stat[pos]++;
-
-				vector<string> characters = feature_character(sent.tokens[j]);
-				for(int i=0;i<characters.size();i++)
-					char_stat[characters[i]]++;
 
 				string dep = feature_dep(sent.tokens[j]);
 				dep_stat[dep]++;
@@ -864,8 +751,6 @@ public:
 		stat2Alphabet(pos_stat, m_posAlphabet, "pos");
 
 		stat2Alphabet(dep_stat, m_depAlphabet, "dep");
-
-		stat2Alphabet(char_stat, m_charAlphabet, "char");
 	}
 
 	string feature_word(const fox::Token& token) {
@@ -882,14 +767,6 @@ public:
 
 	string feature_dep(const fox::Token& token) {
 		return token.depType;
-	}
-
-	vector<string> feature_character(const fox::Token& token) {
-		vector<string> ret;
-		string word = feature_word(token);
-		for(int i=0;i<word.length();i++)
-			ret.push_back(word.substr(i, 1));
-		return ret;
 	}
 
 	void randomInitNrmat(NRMat<dtype>& nrmat, Alphabet& alphabet, int embSize, int seed) {

@@ -1,6 +1,6 @@
 
-#ifndef NNADE3_H_
-#define NNADE3_H_
+#ifndef NNADE3_error_H_
+#define NNADE3_error_H_
 
 #include <iosfwd>
 #include "Options.h"
@@ -36,10 +36,9 @@
 using namespace nr;
 using namespace std;
 
-// a implement of ACL 2016 end-to-end relation extraction
-// use relation f1 on the development set
+// error analysis on the development set
 
-class NNade3 {
+class NNade3_error {
 public:
 	Options m_options;
 
@@ -55,20 +54,11 @@ public:
 #if USE_CUDA==1
   Classifier<gpu> m_classifier;
 #else
-  //Classifier3_base<cpu> m_classifier;
-  //Classifier3_char<cpu> m_classifier;
-  //Classifier3_pos<cpu> m_classifier;
-  //Classifier3_ner<cpu> m_classifier;
-  //Classifier3_label<cpu> m_classifier;
-  //Classifier3_dep<cpu> m_classifier;
-  //Classifier3_entity<cpu> m_classifier;
-  //Classifier3_nosdp<cpu> m_classifier;
-  //Classifier3_nojoint<cpu> m_classifier;
   Classifier3<cpu> m_classifier;
 #endif
 
 
-  NNade3(const Options &options):m_options(options) {
+  NNade3_error(const Options &options):m_options(options) {
 		unknownkey = "-#unknown#-";
 		nullkey = "-#null#-";
 	}
@@ -121,44 +111,24 @@ public:
 
 
 		NRMat<dtype> wordEmb;
-		if(m_options.wordEmbFineTune) {
-			if(m_options.embFile.empty()) {
-				cout<<"random emb"<<endl;
+		if(m_options.embFile.empty()) {
+			cout<<"random emb"<<endl;
 
-				randomInitNrmat(wordEmb, m_wordAlphabet, m_options.wordEmbSize, 1000);
-			} else {
-
-				double* emb = new double[m_wordAlphabet.size()*m_options.wordEmbSize];
-				fox::initArray2((double *)emb, (int)m_wordAlphabet.size(), m_options.wordEmbSize, 0.0);
-				vector<string> known;
-				map<string, int> IDs;
-				alphabet2vectormap(m_wordAlphabet, known, IDs);
-
-				tool.w2v->getEmbedding((double*)emb, m_options.wordEmbSize, known, unknownkey, IDs);
-
-				wordEmb.resize(m_wordAlphabet.size(), m_options.wordEmbSize);
-				array2NRMat((double*) emb, m_wordAlphabet.size(), m_options.wordEmbSize, wordEmb);
-
-				delete[] emb;
-			}
+			randomInitNrmat(wordEmb, m_wordAlphabet, m_options.wordEmbSize, 1000);
 		} else {
-			if(m_options.embFile.empty()) {
-				assert(0);
-			} else {
 
-				double* emb = new double[m_wordAlphabet.size()*m_options.wordEmbSize];
-				fox::initArray2((double *)emb, (int)m_wordAlphabet.size(), m_options.wordEmbSize, 0.0);
-				vector<string> known;
-				map<string, int> IDs;
-				alphabet2vectormap(m_wordAlphabet, known, IDs);
+			double* emb = new double[m_wordAlphabet.size()*m_options.wordEmbSize];
+			fox::initArray2((double *)emb, (int)m_wordAlphabet.size(), m_options.wordEmbSize, 0.0);
+			vector<string> known;
+			map<string, int> IDs;
+			alphabet2vectormap(m_wordAlphabet, known, IDs);
 
-				tool.w2v->getEmbedding((double*)emb, m_options.wordEmbSize, known, unknownkey, IDs);
+			tool.w2v->getEmbedding((double*)emb, m_options.wordEmbSize, known, unknownkey, IDs);
 
-				wordEmb.resize(m_wordAlphabet.size(), m_options.wordEmbSize);
-				array2NRMat((double*) emb, m_wordAlphabet.size(), m_options.wordEmbSize, wordEmb);
+			wordEmb.resize(m_wordAlphabet.size(), m_options.wordEmbSize);
+			array2NRMat((double*) emb, m_wordAlphabet.size(), m_options.wordEmbSize, wordEmb);
 
-				delete[] emb;
-			}
+			delete[] emb;
 		}
 
 		NRMat<dtype> posEmb;
@@ -274,8 +244,9 @@ public:
 		    		averageUnkownEmb(m_charAlphabet, m_classifier._char, m_options.otherEmbSize);
 		    	}
 
-		    	BestPerformance currentDev = evaluateOnDev(tool, annotatedDev, processedDev, iter);
-
+		    	if(iter == m_options.maxIter-1) {
+		    		BestPerformance currentDev = evaluateOnDev(tool, annotatedDev, processedDev, iter);
+		    	}
 /*				if (currentDev.dev_f1Relation > best) {
 					cout << "Exceeds best performance of " << best << endl;
 					best = currentDev.dev_f1Relation;
@@ -385,10 +356,25 @@ public:
 
 		BestPerformance ret;
 
-    	int ctGoldEntity = 0;
-    	int ctPredictEntity = 0;
-    	int ctCorrectEntity = 0;
-    	int ctGoldRelation = 0, ctPredictRelation = 0, ctCorrectRelation = 0;
+
+/*
+    	vector<Entity> fp1Entities; // boundary not match
+    	vector<Entity> fp2Entities; // type not match
+    	vector<Entity> fn1Entities; // boundary not match
+    	vector<Entity> fn2Entities; // type not match
+    	vector<Relation> fp1Relations; // entity not match
+    	vector<Relation> fp2Relations; // entity correct but relation wrong
+    	vector<Relation> fn1Relations; // entity not find
+    	vector<Relation> fn2Relations; // entity find but relation not find
+*/
+    	int fp1Entities=0; // boundary not match
+    	int fp2Entities=0; // type not match
+    	int fn1Entities=0; // boundary not match
+    	int fn2Entities=0; // type not match
+    	int fp1Relations=0; // entity not match
+    	int fp2Relations=0; // entity correct but relation wrong
+    	int fn1Relations=0; // entity not find
+    	int fn2Relations=0; // entity find but relation not find
 
 		for(int sentIdx=0;sentIdx<processed.size();sentIdx++) {
 			const fox::Sent & sent = processed[sentIdx];
@@ -399,7 +385,7 @@ public:
 			vector<Entity> anwserEntities;
 			vector<Relation> anwserRelations;
 
-	    	vector<Relation> fnRelations;
+	    	//vector<Relation> fnRelations;
 
 			for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
 				const fox::Token& token = sent.tokens[tokenIdx];
@@ -467,204 +453,142 @@ public:
 			} // bIdx
 
 			// evaluate by ourselves
-			ctGoldEntity += annotatedSent.entities.size();
-			ctPredictEntity += anwserEntities.size();
 			for(int i=0;i<anwserEntities.size();i++) {
-				int k=-1;
 				int j=0;
 				for(;j<annotatedSent.entities.size();j++) {
 					if(anwserEntities[i].equalsBoundary(annotatedSent.entities[j])) {
-						if(anwserEntities[i].equalsType(annotatedSent.entities[j])) {
-							ctCorrectEntity ++;
-							break;
-						} else {
-							k = j;
-							break;
-						}
+						break;
 					}
 				}
 
+				if(j>=annotatedSent.entities.size()) { // boundary not match
+					//fp1Entities.push_back(anwserEntities[i]);
+					fp1Entities++;
+				} else {
+					int k=0;
+					for(;k<annotatedSent.entities.size();k++)  {
+						if(anwserEntities[i].equals(annotatedSent.entities[k])) {
+							break;
+						}
+					}
+
+					if(k>=annotatedSent.entities.size()) {
+						//fp2Entities.push_back(anwserEntities[i]); // type not match
+						fp2Entities++;
+					} else {
+						// TP
+					}
+				}
 
 			}
 
 			for(int i=0;i<annotatedSent.entities.size();i++) {
-				int k=-1;
 				int j=0;
 				for(;j<anwserEntities.size();j++) {
 					if(annotatedSent.entities[i].equalsBoundary(anwserEntities[j])) {
-						if(annotatedSent.entities[i].equalsType(anwserEntities[j])) {
-							break;
-						} else {
-							k = j;
+						break;
+					}
+				}
+
+				if(j>=anwserEntities.size()) { // boundary not match
+					//fn1Entities.push_back(annotatedSent.entities[i]);
+					fn1Entities++;
+				} else {
+					int k=0;
+					for(;k<anwserEntities.size();k++)  {
+						if(annotatedSent.entities[i].equals(anwserEntities[k])) {
 							break;
 						}
 					}
 
+					if(k>=anwserEntities.size()) {
+						//fn2Entities.push_back(annotatedSent.entities[i]); // type not match
+						fn2Entities++;
+					} else {
+						// TP
+					}
 				}
-
 
 			}
 
-			ctGoldRelation += annotatedSent.relations.size();
-			ctPredictRelation += anwserRelations.size();
+
 			for(int i=0;i<anwserRelations.size();i++) {
-				int j=0;
-				for(;j<annotatedSent.relations.size();j++) {
-					if(anwserRelations[i].equals(annotatedSent.relations[j])) {
-						ctCorrectRelation ++;
-						break;
+				// try to match gold entities
+				bool entity1Matched = false;
+				bool entity2Matched = false;
+
+				for(int k=0;k<annotatedSent.entities.size();k++) {
+					if(entity1Matched==false && anwserRelations[i].entity1.equals(annotatedSent.entities[k])) {
+						entity1Matched = true;
 					}
+					if(entity2Matched==false && anwserRelations[i].entity2.equals(annotatedSent.entities[k])) {
+						entity2Matched = true;
+					}
+
+					if(entity1Matched && entity2Matched)
+						break;
+				}
+
+				if(!entity1Matched || !entity2Matched) {
+					//fp1Relations.push_back(anwserRelations[i]);
+					fp1Relations++;
+				} else {
+					// try to match gold relations
+
+					int j=0;
+					for(;j<annotatedSent.relations.size();j++) {
+						if(anwserRelations[i].equals(annotatedSent.relations[j])) {
+							break;
+						}
+					}
+
+					if(j>=annotatedSent.relations.size()) {
+						//fp2Relations.push_back(anwserRelations[i]);
+						fp2Relations++;
+					} else {
+						// TP
+					}
+
 				}
 
 			}
 
 			for(int i=0;i<annotatedSent.relations.size();i++) {
-				int j=0;
-				for(;j<anwserRelations.size();j++) {
-					if(annotatedSent.relations[i].equals(anwserRelations[j])) {
-						break;
-					}
-				}
-
-				if(j>=anwserRelations.size()) {
-					fnRelations.push_back(annotatedSent.relations[i]);
-				}
-			}
-
-			for(int i=0;i<fnRelations.size();i++) {
+				// try to match predicted entities
 				bool entity1Matched = false;
 				bool entity2Matched = false;
-				for(int j=0;j<anwserEntities.size();j++) {
-					if(entity1Matched==false && fnRelations[i].entity1.equals(anwserEntities[j])) {
+
+				for(int k=0;k<anwserEntities.size();k++) {
+					if(entity1Matched==false && annotatedSent.relations[i].entity1.equals(anwserEntities[k])) {
 						entity1Matched = true;
-					} else if(entity2Matched==false && fnRelations[i].entity2.equals(anwserEntities[j])) {
+					}
+					if(entity2Matched==false && annotatedSent.relations[i].entity2.equals(anwserEntities[k])) {
 						entity2Matched = true;
 					}
-				}
 
-			}
-
-
-		} // sent
-
-		ret.dev_pEntity = precision(ctCorrectEntity, ctPredictEntity);
-		ret.dev_rEntity = recall(ctCorrectEntity, ctGoldEntity);
-		ret.dev_f1Entity = f1(ctCorrectEntity, ctGoldEntity, ctPredictEntity);
-		ret.dev_pRelation = precision(ctCorrectRelation, ctPredictRelation);
-		ret.dev_rRelation = recall(ctCorrectRelation, ctGoldRelation);
-		ret.dev_f1Relation = f1(ctCorrectRelation, ctGoldRelation, ctPredictRelation);
-
-		cout<<"dev entity p: "<<ret.dev_pEntity<<", r:"<<ret.dev_rEntity<<", f1:"<<ret.dev_f1Entity<<endl;
-		cout<<"dev relation p: "<<ret.dev_pRelation<<", r:"<<ret.dev_rRelation<<", f1:"<<ret.dev_f1Relation<<endl;
-
-
-		return ret;
-	}
-
-	BestPerformance test(Tool& tool, vector<ADEsentence> & annotated, vector<fox::Sent> & processed) {
-
-		BestPerformance ret;
-
-    	int ctGoldEntity = 0;
-    	int ctPredictEntity = 0;
-    	int ctCorrectEntity = 0;
-    	int ctGoldRelation = 0, ctPredictRelation = 0, ctCorrectRelation = 0;
-
-		for(int sentIdx=0;sentIdx<processed.size();sentIdx++) {
-			const fox::Sent & sent = processed[sentIdx];
-			const ADEsentence & annotatedSent =annotated[sentIdx];
-			string lastNerLabel = nullkey;
-			vector<string> labelSequence;
-
-			vector<Entity> anwserEntities;
-			vector<Relation> anwserRelations;
-
-			for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
-				const fox::Token& token = sent.tokens[tokenIdx];
-
-				Example eg(false);
-				string fakeLabelName = "";
-				generateOneNerExample(eg, fakeLabelName, sent, lastNerLabel, tokenIdx);
-
-				vector<dtype> probs;
-				int predicted = m_classifier.predictNer(eg, probs);
-
-				string labelName = NERlabelID2labelName(predicted);
-				labelSequence.push_back(labelName);
-
-				// decode entity label
-				if(labelName == B_Disease || labelName == U_Disease ||
-						labelName == B_Chemical || labelName == U_Chemical ) {
-					Entity entity;
-					newEntity(token, labelName, entity);
-					anwserEntities.push_back(entity);
-				} else if(labelName == I_Disease || labelName == L_Disease ||
-						labelName == I_Chemical || labelName == L_Chemical ) {
-					if(checkWrongState(labelSequence)) {
-						Entity& entity = anwserEntities[anwserEntities.size()-1];
-						appendEntity(token, entity);
-					}
-				}
-
-				lastNerLabel = labelName;
-			} // token
-
-
-			for(int bIdx=0;bIdx<anwserEntities.size();bIdx++) {
-				const Entity& bEntity = anwserEntities[bIdx];
-
-				// a is before b
-				for(int aIdx=0;aIdx<bIdx;aIdx++) {
-					const Entity& aEntity = anwserEntities[aIdx];
-
-					// type constraint
-					if(aEntity.type==bEntity.type)	{
-						continue;
-					}
-
-					const Entity& Disease = aEntity.type==TYPE_Disease? aEntity:bEntity;
-					const Entity& Chemical = aEntity.type==TYPE_Disease? bEntity:aEntity;
-
-					Example eg(true);
-					string fakeLabelName = "";
-					generateOneRelExample(eg, fakeLabelName, sent, Disease, Chemical, labelSequence);
-
-					vector<dtype> probs;
-					int predicted = m_classifier.predictRel(eg, probs);
-
-					string labelName = RellabelID2labelName(predicted);
-
-					// decode relation label
-					if(labelName == ADE) {
-						Relation relation;
-						newRelation(relation, Disease, Chemical);
-						anwserRelations.push_back(relation);
-					}
-
-				} // aIdx
-
-			} // bIdx
-
-			// evaluate by ourselves
-			ctGoldEntity += annotatedSent.entities.size();
-			ctPredictEntity += anwserEntities.size();
-			for(int i=0;i<anwserEntities.size();i++) {
-				for(int j=0;j<annotatedSent.entities.size();j++) {
-					if(anwserEntities[i].equals(annotatedSent.entities[j])) {
-						ctCorrectEntity ++;
+					if(entity1Matched && entity2Matched)
 						break;
-					}
 				}
-			}
 
-			ctGoldRelation += annotatedSent.relations.size();
-			ctPredictRelation += anwserRelations.size();
-			for(int i=0;i<anwserRelations.size();i++) {
-				for(int j=0;j<annotatedSent.relations.size();j++) {
-					if(anwserRelations[i].equals(annotatedSent.relations[j])) {
-						ctCorrectRelation ++;
-						break;
+				if(!entity1Matched || !entity2Matched) {
+					//fn1Relations.push_back(annotatedSent.relations[i]);
+					fn1Relations++;
+				} else {
+					// try to match predicted relations
+					int j=0;
+					for(;j<anwserRelations.size();j++) {
+						if(annotatedSent.relations[i].equals(anwserRelations[j])) {
+							break;
+						}
 					}
+
+					if(j>=anwserRelations.size()) {
+						//fn2Relations.push_back(annotatedSent.relations[i]);
+						fn2Relations++;
+					} else {
+						// TP
+					}
+
 				}
 			}
 
@@ -672,21 +596,34 @@ public:
 		} // sent
 
 
-		ret.test_pEntity = precision(ctCorrectEntity, ctPredictEntity);
-		ret.test_rEntity = recall(ctCorrectEntity, ctGoldEntity);
-		ret.test_f1Entity = f1(ctCorrectEntity, ctGoldEntity, ctPredictEntity);
-		ret.test_pRelation = precision(ctCorrectRelation, ctPredictRelation);
-		ret.test_rRelation = recall(ctCorrectRelation, ctGoldRelation);
-		ret.test_f1Relation = f1(ctCorrectRelation, ctGoldRelation, ctPredictRelation);
+		if(iter == m_options.maxIter-1) {
+			cout<<"### error analysis begin ###"<<endl;
+			//double ctTotalError = fp1Entities.size()+fp2Entities.size()+fn1Entities.size()+fn2Entities.size();
+			cout<<"fp boundary not match "<<fp1Entities/*.size()/ctTotalError*/<<endl;
 
-		cout<<"test entity p: "<<ret.test_pEntity<<", r:"<<ret.test_rEntity<<", f1:"<<ret.test_f1Entity<<endl;
-		cout<<"test relation p: "<<ret.test_pRelation<<", r:"<<ret.test_rRelation<<", f1:"<<ret.test_f1Relation<<endl;
+			cout<<"fp type not match "<<fp2Entities/*.size()/ctTotalError*/<<endl;
 
+			cout<<"fn boundary not match "<<fn1Entities/*.size()/ctTotalError*/<<endl;
+
+			cout<<"fn type not match "<<fn2Entities/*.size()/ctTotalError*/<<endl;
+
+
+			//ctTotalError = fp1Relations.size()+fp2Relations.size()+fn1Relations.size()+fn2Relations.size();
+			cout<<"fp entity wrong "<<fp1Relations/*.size()/ctTotalError*/<<endl;
+
+			cout<<"fp entity correct but relation wrong "<<fp2Relations/*.size()/ctTotalError*/<<endl;
+
+			cout<<"fn entity not found "<<fn1Relations/*.size()/ctTotalError*/<<endl;
+
+			cout<<"fn entity found but relation lost "<<fn2Relations/*.size()/ctTotalError*/<<endl;
+
+
+			cout<<"### error analysis end ###"<<endl;
+		}
 
 		return ret;
-
-
 	}
+
 
 	// Only used when current label is I or L, check state from back to front
 	// in case that "O I I", etc.

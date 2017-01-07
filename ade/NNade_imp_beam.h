@@ -1,6 +1,6 @@
 
-#ifndef NNADE3_H_
-#define NNADE3_H_
+#ifndef NNADE_IMP_BEAM_H_
+#define NNADE_IMP_BEAM_H_
 
 #include <iosfwd>
 #include "Options.h"
@@ -17,21 +17,12 @@
 #include "Punctuation.h"
 #include "Word2Vec.h"
 #include "utils.h"
+#include "Classifier.h"
 #include "Example.h"
 #include "BestPerformance.h"
-#include "Classifier3_base.h"
-#include "Classifier3_char.h"
-#include "Classifier3_pos.h"
-#include "Classifier3_ner.h"
+#include "Prediction.h"
+#include "beamsearch.h"
 
-#include "Classifier3_label.h"
-#include "Classifier3_dep.h"
-#include "Classifier3_entity.h"
-
-#include "Classifier3_nosdp.h"
-#include "Classifier3_nojoint.h"
-
-#include "Classifier3.h"
 
 using namespace nr;
 using namespace std;
@@ -39,7 +30,7 @@ using namespace std;
 // a implement of ACL 2016 end-to-end relation extraction
 // use relation f1 on the development set
 
-class NNade3 {
+class NNade_imp_beam {
 public:
 	Options m_options;
 
@@ -47,7 +38,6 @@ public:
 	Alphabet m_posAlphabet;
 	Alphabet m_nerAlphabet;
 	Alphabet m_depAlphabet;
-	Alphabet m_charAlphabet;
 
 	string unknownkey;
 	string nullkey;
@@ -55,20 +45,11 @@ public:
 #if USE_CUDA==1
   Classifier<gpu> m_classifier;
 #else
-  //Classifier3_base<cpu> m_classifier;
-  //Classifier3_char<cpu> m_classifier;
-  //Classifier3_pos<cpu> m_classifier;
-  //Classifier3_ner<cpu> m_classifier;
-  //Classifier3_label<cpu> m_classifier;
-  //Classifier3_dep<cpu> m_classifier;
-  //Classifier3_entity<cpu> m_classifier;
-  //Classifier3_nosdp<cpu> m_classifier;
-  //Classifier3_nojoint<cpu> m_classifier;
-  Classifier3<cpu> m_classifier;
+  Classifier<cpu> m_classifier;
 #endif
 
 
-  NNade3(const Options &options):m_options(options) {
+  NNade_imp_beam(const Options &options):m_options(options) {
 		unknownkey = "-#unknown#-";
 		nullkey = "-#null#-";
 	}
@@ -91,10 +72,6 @@ public:
 		m_depAlphabet.clear();
 		m_depAlphabet.from_string(unknownkey);
 		m_depAlphabet.from_string(nullkey);
-
-		m_charAlphabet.clear();
-		m_charAlphabet.from_string(unknownkey);
-		m_charAlphabet.from_string(nullkey);
 
 		// ner alphabet should be initialized directly, not from the dataset
 		m_nerAlphabet.clear();
@@ -167,12 +144,6 @@ public:
 		randomInitNrmat(nerEmb, m_nerAlphabet, m_options.otherEmbSize, 1020);
 		NRMat<dtype> depEmb;
 		randomInitNrmat(depEmb, m_depAlphabet, m_options.otherEmbSize, 1030);
-		NRMat<dtype> charEmb;
-		randomInitNrmat(charEmb, m_charAlphabet, m_options.otherEmbSize, 1040);
-
-		vector<Example> trainExamples;
-		initialTrainingExamples(tool, annotatedTrain, processedTrain, trainExamples);
-		cout<<"Total train example number: "<<trainExamples.size()<<endl;
 
 		  m_classifier.init(m_options);
 
@@ -188,11 +159,9 @@ public:
 		m_classifier._ner.initial(nerEmb);
 		m_classifier._ner.setEmbFineTune(true);
 
-		m_classifier._char.initial(charEmb);
-		m_classifier._char.setEmbFineTune(true);
 
-
-		static vector<Example> subExamples;
+		static vector<Example> subNerExamples;
+		static vector<Example> subRelExamples;
 
 		dtype best = 0;
 
@@ -201,56 +170,61 @@ public:
 
 			cout << "##### Iteration " << iter << std::endl;
 
-		    // this coding block should be identical to initialTrainingExamples
-		    // we don't regenerate training examples, instead fetch them directly
-		    int exampleIdx = 0;
-
 			for(int sentIdx=0;sentIdx<processedTrain.size();sentIdx++) {
 				const fox::Sent & sent = processedTrain[sentIdx];
 				const ADEsentence & annotatedSent = annotatedTrain[sentIdx];
 
-				for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
-					const fox::Token& token = sent.tokens[tokenIdx];
+				Prediction gold(true);
+				initialGoldPrediction(annotatedSent, sent, gold);
 
-					subExamples.clear();
-					subExamples.push_back(trainExamples[exampleIdx]);
-					int curUpdateIter = iter * trainExamples.size() + exampleIdx;
+				Prediction predict = beamSearch(sent, gold, m_options.beamSize1, 0);
 
-					dtype cost = m_classifier.processNer(subExamples, curUpdateIter);
+				subNerExamples.clear();
+				int min = predict.labels.size() < sent.tokens.size() ? predict.labels.size() : sent.tokens.size();
+				for(int tokenIdx=0;tokenIdx<min;tokenIdx++) {
+					if(predict.labels[tokenIdx] != gold.labels[tokenIdx]) {
+						subNerExamples.push_back(gold.examples[tokenIdx]);
+					}
+				}
 
-					//m_classifier.checkgradsNer(subExamples, curUpdateIter);
+				subRelExamples.clear();
+				for(int relationIdx=0;relationIdx<predict.relations.size();relationIdx++) {
+					const Relation& predictRelation = predict.relations[relationIdx];
+
+					if(-1 == containsEntity(gold.entities, predictRelation.entity1)) {
+						Example egRel(true);
+						generateOneRelExample(egRel, IMP_Disease, sent, predictRelation.entity1, predictRelation.entity2, predict.labelNames);
+						subRelExamples.push_back(egRel);
+
+					} else if(-1 == containsEntity(gold.entities, predictRelation.entity2)) {
+						Example egRel(true);
+						generateOneRelExample(egRel, IMP_Chemical, sent, predictRelation.entity1, predictRelation.entity2, predict.labelNames);
+						subRelExamples.push_back(egRel);
+
+					} else {
+						int goldRelationIdx = containsRelation(gold.relations, predictRelation);
+						assert(goldRelationIdx != -1);
+						int goldLabel = gold.labels[goldRelationIdx+sent.tokens.size()];
+						int predictLabel = predict.labels[relationIdx+sent.tokens.size()];
+						if(goldLabel != predictLabel)
+							subRelExamples.push_back(gold.examples[goldRelationIdx+sent.tokens.size()]);
+					}
+
+				}
+
+				if(subNerExamples.size()!=0 || subRelExamples.size()!=0) {
+					int curUpdateIter = iter + sentIdx;
+
+					if(subNerExamples.size()!=0) {
+						dtype cost = m_classifier.processNer(subNerExamples, curUpdateIter);
+					}
+
+					if(subRelExamples.size()!=0) {
+						dtype cost = m_classifier.processRel(subRelExamples, curUpdateIter);
+					}
+
 					m_classifier.updateParams(m_options.regParameter, m_options.adaAlpha, m_options.adaEps);
-
-
-					exampleIdx++;
-				} // token
-
-				for(int bIdx=0;bIdx<annotatedSent.entities.size();bIdx++) {
-					const Entity& bEntity = annotatedSent.entities[bIdx];
-
-					// a is before b
-					for(int aIdx=0;aIdx<bIdx;aIdx++) {
-						const Entity& aEntity = annotatedSent.entities[aIdx];
-
-						// type constraint
-						if(aEntity.type==bEntity.type)	{
-							continue;
-						}
-
-						subExamples.clear();
-						subExamples.push_back(trainExamples[exampleIdx]);
-						int curUpdateIter = iter * trainExamples.size() + exampleIdx;
-
-						dtype cost = m_classifier.processRel(subExamples, curUpdateIter);
-						//m_classifier.checkgradsRel(subExamples, curUpdateIter);
-						m_classifier.updateParams(m_options.regParameter, m_options.adaAlpha, m_options.adaEps);
-
-
-						exampleIdx++;
-
-					} // aIdx
-
-				} // bIdx
+				}
 
 
 			} // sent
@@ -260,7 +234,7 @@ public:
 		    // an iteration end, begin to evaluate
 		    if((iter+1)% m_options.evalPerIter ==0) {
 
-		    	if(m_options.wordEmbFineTune && m_options.wordCutOff == 0) {
+		    	if(m_options.wordCutOff == 0) {
 
 		    		averageUnkownEmb(m_wordAlphabet, m_classifier._words, m_options.wordEmbSize);
 
@@ -269,20 +243,17 @@ public:
 		    		averageUnkownEmb(m_depAlphabet, m_classifier._dep, m_options.otherEmbSize);
 
 		    		averageUnkownEmb(m_nerAlphabet, m_classifier._ner, m_options.otherEmbSize);
-
-
-		    		averageUnkownEmb(m_charAlphabet, m_classifier._char, m_options.otherEmbSize);
 		    	}
 
-		    	BestPerformance currentDev = evaluateOnDev(tool, annotatedDev, processedDev, iter);
+		    	BestPerformance currentDev = evaluateOnDev(tool, annotatedDev, processedDev);
 
-/*				if (currentDev.dev_f1Relation > best) {
+				if (currentDev.dev_f1Relation > best) {
 					cout << "Exceeds best performance of " << best << endl;
 					best = currentDev.dev_f1Relation;
 
 					BestPerformance currentTest = test(tool, annotatedTest, processedTest);
 
-
+					// record the best performance for this group
 					ret.dev_pEntity = currentDev.dev_pEntity;
 					ret.dev_rEntity = currentDev.dev_rEntity;
 					ret.dev_f1Entity = currentDev.dev_f1Entity;
@@ -296,7 +267,7 @@ public:
 					ret.test_rRelation = currentTest.test_rRelation;
 					ret.test_f1Relation = currentTest.test_f1Relation;
 
-				}*/
+				}
 
 		    }
 
@@ -307,81 +278,218 @@ public:
 		return ret;
 	}
 
+	void initialGoldPrediction(const ADEsentence& annotatedSent, const fox::Sent& sent, Prediction& prediction) {
+		string lastNerLabel = nullkey;
 
-	void initialTrainingExamples(Tool& tool, vector<ADEsentence> & annotated, vector<fox::Sent> & processed,
-			vector<Example> & examples) {
+		for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
+			const fox::Token& token = sent.tokens[tokenIdx];
+			int entityIdx = -1;
+			string schemaLabel = OTHER;
 
+			for(int i=0;i<annotatedSent.entities.size();i++) {
+				const Entity& entity = annotatedSent.entities[i];
 
-		for(int sentIdx=0;sentIdx<processed.size();sentIdx++) {
-			const fox::Sent & sent = processed[sentIdx];
-			const ADEsentence & annotatedSent =annotated[sentIdx];
-			string lastNerLabel = nullkey;
-			vector<string> labelSequence;
+				string temp = isTokenInEntity(token, entity);
+				if(temp != OTHER) {
+					entityIdx = i;
+					schemaLabel = temp;
+					break;
+				}
+			}
 
-			for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
-				const fox::Token& token = sent.tokens[tokenIdx];
-				int entityIdx = -1;
-				string schemaLabel = OTHER;
+			Example eg(false);
+			string labelName = entityIdx!=-1 ? schemaLabel+"_"+annotatedSent.entities[entityIdx].type : OTHER;
+			generateOneNerExample(eg, labelName, sent, lastNerLabel, tokenIdx);
 
-				for(int i=0;i<annotatedSent.entities.size();i++) {
-					const Entity& entity = annotatedSent.entities[i];
+			prediction.labels.push_back(NERlabelName2labelID(labelName));
+			prediction.labelNames.push_back(labelName);
+			prediction.examples.push_back(eg);
 
-					string temp = isTokenInEntity(token, entity);
-					if(temp != OTHER) {
-						entityIdx = i;
-						schemaLabel = temp;
-						break;
-					}
+			if(labelName == B_Disease || labelName == U_Disease ||
+					labelName == B_Chemical || labelName == U_Chemical ) {
+				Entity entity;
+				newEntity(token, labelName, entity);
+				prediction.entities.push_back(entity);
+			} else if(labelName == I_Disease || labelName == L_Disease ||
+					labelName == I_Chemical || labelName == L_Chemical ) {
+				if(checkWrongState(prediction.labelNames)) {
+					Entity& entity = prediction.entities[prediction.entities.size()-1];
+					appendEntity(token, entity);
+				}
+			}
+
+			lastNerLabel = labelName;
+		} // token
+
+		for(int bIdx=0;bIdx<annotatedSent.entities.size();bIdx++) {
+			const Entity& bEntity = annotatedSent.entities[bIdx];
+
+			// a is before b
+			for(int aIdx=0;aIdx<bIdx;aIdx++) {
+				const Entity& aEntity = annotatedSent.entities[aIdx];
+
+				// type constraint
+				if(aEntity.type==bEntity.type)	{
+					continue;
 				}
 
-				Example eg(false);
-				string labelName = entityIdx!=-1 ? schemaLabel+"_"+annotatedSent.entities[entityIdx].type : OTHER;
-				generateOneNerExample(eg, labelName, sent, lastNerLabel, tokenIdx);
-				labelSequence.push_back(labelName);
+				const Entity& Disease = aEntity.type==TYPE_Disease? aEntity:bEntity;
+				const Entity& Chemical = aEntity.type==TYPE_Disease? bEntity:aEntity;
 
-				examples.push_back(eg);
+				Example eg(true);
+				string labelName = Not_ADE;
+				if(isADE(Disease, Chemical, annotatedSent)) {
+					labelName = ADE;
+				}
+				prediction.labels.push_back(RellabelName2labelID(labelName));
+				prediction.labelNames.push_back(labelName);
 
-				lastNerLabel = labelName;
-			} // token
+				generateOneRelExample(eg, labelName, sent, Disease, Chemical, prediction.labelNames);
 
-			for(int bIdx=0;bIdx<annotatedSent.entities.size();bIdx++) {
-				const Entity& bEntity = annotatedSent.entities[bIdx];
+				prediction.examples.push_back(eg);
 
-				// a is before b
-				for(int aIdx=0;aIdx<bIdx;aIdx++) {
-					const Entity& aEntity = annotatedSent.entities[aIdx];
-
-					// type constraint
-					if((aEntity.type==bEntity.type))	{
-						continue;
-					}
-
-					const Entity& Disease = aEntity.type==TYPE_Disease? aEntity:bEntity;
-					const Entity& Chemical = aEntity.type==TYPE_Disease? bEntity:aEntity;
-
-					Example eg(true);
-					string labelName = Not_ADE;
-					if(isADE(Disease, Chemical, annotatedSent)) {
-						labelName = ADE;
-					}
-
-					generateOneRelExample(eg, labelName, sent, Disease, Chemical, labelSequence);
-
-					examples.push_back(eg);
-
-				} // aIdx
-
-			} // bIdx
+				// only ADE or not_ADE
+				Relation relation;
+				newRelation(relation, Disease, Chemical);
+				prediction.relations.push_back(relation);
 
 
-		} // sent
+			} // aIdx
+
+		} // bIdx
 
 
 
 	}
 
-	BestPerformance evaluateOnDev(Tool& tool, vector<ADEsentence> & annotated,
-			vector<fox::Sent> & processed, int iter) {
+	// model: 0-train 1-dev 2-test
+	Prediction beamSearch(const fox::Sent & sent, const Prediction& gold,
+			const int beamSize1, int model) {
+		// entity
+		vector<Prediction> beam;
+		list<Prediction> buffer;
+
+		for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
+			const fox::Token& token = sent.tokens[tokenIdx];
+
+			if(tokenIdx==0) {
+				Example eg(false);
+				generateOneNerExample(eg, "", sent, nullkey, tokenIdx);
+
+				vector<dtype> probs;
+				m_classifier.predictNer(eg, probs);
+
+				for(int labelIdx=0;labelIdx<probs.size();labelIdx++) {
+					Prediction predict(false);
+					predict.labels.push_back(labelIdx);
+					predict.addLogProb(probs[labelIdx]);
+
+					addToBuffer(buffer, predict);
+				}
+			} else {
+				for(int beamIdx=0;beamIdx<beam.size();beamIdx++) {
+					const Prediction& old = beam[beamIdx];
+					string lastNerLabel = NERlabelID2labelName(old.labels[old.labels.size()-1]);
+
+					Example eg(false);
+					generateOneNerExample(eg, "", sent, lastNerLabel, tokenIdx);
+
+					vector<dtype> probs;
+					m_classifier.predictNer(eg, probs);
+
+					for(int labelIdx=0;labelIdx<probs.size();labelIdx++) {
+						Prediction predict(false);
+
+						copyPrediction(old, predict);
+
+						predict.labels.push_back(labelIdx);
+						predict.addLogProb(probs[labelIdx]);
+
+						addToBuffer(buffer, predict);
+					}
+				}
+			}
+
+			beam.clear();
+			Kbest(beam, buffer, beamSize1);
+			buffer.clear();
+
+			if(model==0 && earlyUpdate(beam, gold)) {
+				return beam[0];
+			}
+
+
+		} // token
+
+		// relation
+		buffer.clear();
+
+		Prediction& p = beam[0];
+
+		// generate entities based on the token label sequence of beam[0]
+		for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
+			const fox::Token& token = sent.tokens[tokenIdx];
+			string labelName = NERlabelID2labelName(p.labels[tokenIdx]);
+
+			p.labelNames.push_back(labelName);
+
+			if(labelName == B_Disease || labelName == U_Disease ||
+					labelName == B_Chemical || labelName == U_Chemical ) {
+				Entity entity;
+				newEntity(token, labelName, entity);
+				p.entities.push_back(entity);
+			} else if(labelName == I_Disease || labelName == L_Disease ||
+					labelName == I_Chemical || labelName == L_Chemical ) {
+				if(checkWrongState(p.labelNames)) {
+					Entity& entity = p.entities[p.entities.size()-1];
+					appendEntity(token, entity);
+				}
+			}
+		}
+
+
+		for(int bIdx=0;bIdx<p.entities.size();bIdx++) {
+			const Entity& bEntity = p.entities[bIdx];
+
+			// a is before b
+			for(int aIdx=0;aIdx<bIdx;aIdx++) {
+				const Entity& aEntity = p.entities[aIdx];
+
+				// type constraint
+				if(aEntity.type==bEntity.type)	{
+					continue;
+				}
+
+				const Entity& Disease = aEntity.type==TYPE_Disease? aEntity:bEntity;
+				const Entity& Chemical = aEntity.type==TYPE_Disease? bEntity:aEntity;
+
+				Example eg(true);
+				generateOneRelExample(eg, "", sent, Disease, Chemical, p.labelNames);
+
+				vector<dtype> probs;
+				int bestLabel = m_classifier.predictRel(eg, probs);
+				string predictLabelName = RellabelID2labelName(bestLabel);
+				p.labelNames.push_back(predictLabelName);
+
+				p.labels.push_back(bestLabel);
+				p.addLogProb(probs[bestLabel]);
+
+				// all relation types
+				Relation relation;
+				newRelation(relation, Disease, Chemical);
+				p.relations.push_back(relation);
+
+
+
+			} // aIdx
+
+		} // bIdx
+
+		return p;
+	}
+
+
+	BestPerformance evaluateOnDev(Tool& tool, vector<ADEsentence> & annotated, vector<fox::Sent> & processed) {
 
 		BestPerformance ret;
 
@@ -390,160 +498,70 @@ public:
     	int ctCorrectEntity = 0;
     	int ctGoldRelation = 0, ctPredictRelation = 0, ctCorrectRelation = 0;
 
+
 		for(int sentIdx=0;sentIdx<processed.size();sentIdx++) {
 			const fox::Sent & sent = processed[sentIdx];
 			const ADEsentence & annotatedSent =annotated[sentIdx];
-			string lastNerLabel = nullkey;
-			vector<string> labelSequence;
 
 			vector<Entity> anwserEntities;
 			vector<Relation> anwserRelations;
 
-	    	vector<Relation> fnRelations;
+			Prediction fakeGold(false);
+			Prediction predict = beamSearch(sent, fakeGold, m_options.beamSize1, 1);
 
-			for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
-				const fox::Token& token = sent.tokens[tokenIdx];
+			// add live_in to answer
+			for(int relationIdx=0;relationIdx<predict.relations.size();relationIdx++) {
+				const Relation& predictRelation = predict.relations[relationIdx];
+				const string& labelName = predict.labelNames[relationIdx+sent.tokens.size()];
 
-				Example eg(false);
-				string fakeLabelName = "";
-				generateOneNerExample(eg, fakeLabelName, sent, lastNerLabel, tokenIdx);
+				if(ADE == labelName) {
+					anwserRelations.push_back(predictRelation);
+				}
+			}
 
-				vector<dtype> probs;
-				int predicted = m_classifier.predictNer(eg, probs);
+			// check entity that need to be deleted
+			for(int relationIdx=0;relationIdx<predict.relations.size();relationIdx++) {
+				const Relation& predictRelation = predict.relations[relationIdx];
+				const string& labelName = predict.labelNames[relationIdx+sent.tokens.size()];
 
-				string labelName = NERlabelID2labelName(predicted);
-				labelSequence.push_back(labelName);
-
-				// decode entity label
-				if(labelName == B_Disease || labelName == U_Disease ||
-						labelName == B_Chemical || labelName == U_Chemical) {
-					Entity entity;
-					newEntity(token, labelName, entity);
-					anwserEntities.push_back(entity);
-				} else if(labelName == I_Disease || labelName == L_Disease ||
-						labelName == I_Chemical || labelName == L_Chemical) {
-					if(checkWrongState(labelSequence)) {
-						Entity& entity = anwserEntities[anwserEntities.size()-1];
-						appendEntity(token, entity);
-					}
+				if(IMP_Disease == labelName && -1 == relationContainsEntity(anwserRelations, predictRelation.entity1)) {
+					// delete entity
+					deleteEntity(predict.entities, predictRelation.entity1);
+				} else if(IMP_Chemical == labelName && -1 == relationContainsEntity(anwserRelations, predictRelation.entity2)) {
+					// delete entity
+					deleteEntity(predict.entities, predictRelation.entity2);
 				}
 
-				lastNerLabel = labelName;
-			} // token
+			}
 
-			for(int bIdx=0;bIdx<anwserEntities.size();bIdx++) {
-				const Entity& bEntity = anwserEntities[bIdx];
+			// add left entity to answer
+			for(int i=0;i<predict.entities.size();i++) {
+				anwserEntities.push_back(predict.entities[i]);
+			}
 
-				// a is before b
-				for(int aIdx=0;aIdx<bIdx;aIdx++) {
-					const Entity& aEntity = anwserEntities[aIdx];
-
-					// type constraint
-					if(aEntity.type==bEntity.type)	{
-						continue;
-					}
-
-					const Entity& Disease = aEntity.type==TYPE_Disease? aEntity:bEntity;
-					const Entity& Chemical = aEntity.type==TYPE_Disease? bEntity:aEntity;
-
-					Example eg(true);
-					string fakeLabelName = "";
-					generateOneRelExample(eg, fakeLabelName, sent, Disease, Chemical, labelSequence);
-
-					vector<dtype> probs;
-					int predicted = m_classifier.predictRel(eg, probs);
-
-					string labelName = RellabelID2labelName(predicted);
-
-					// decode relation label
-					if(labelName == ADE) {
-						Relation relation;
-						newRelation(relation, Disease, Chemical);
-						anwserRelations.push_back(relation);
-					}
-
-				} // aIdx
-
-			} // bIdx
 
 			// evaluate by ourselves
 			ctGoldEntity += annotatedSent.entities.size();
 			ctPredictEntity += anwserEntities.size();
 			for(int i=0;i<anwserEntities.size();i++) {
-				int k=-1;
-				int j=0;
-				for(;j<annotatedSent.entities.size();j++) {
-					if(anwserEntities[i].equalsBoundary(annotatedSent.entities[j])) {
-						if(anwserEntities[i].equalsType(annotatedSent.entities[j])) {
-							ctCorrectEntity ++;
-							break;
-						} else {
-							k = j;
-							break;
-						}
+				for(int j=0;j<annotatedSent.entities.size();j++) {
+					if(anwserEntities[i].equals(annotatedSent.entities[j])) {
+						ctCorrectEntity ++;
+						break;
 					}
 				}
-
-
-			}
-
-			for(int i=0;i<annotatedSent.entities.size();i++) {
-				int k=-1;
-				int j=0;
-				for(;j<anwserEntities.size();j++) {
-					if(annotatedSent.entities[i].equalsBoundary(anwserEntities[j])) {
-						if(annotatedSent.entities[i].equalsType(anwserEntities[j])) {
-							break;
-						} else {
-							k = j;
-							break;
-						}
-					}
-
-				}
-
-
 			}
 
 			ctGoldRelation += annotatedSent.relations.size();
 			ctPredictRelation += anwserRelations.size();
 			for(int i=0;i<anwserRelations.size();i++) {
-				int j=0;
-				for(;j<annotatedSent.relations.size();j++) {
+				for(int j=0;j<annotatedSent.relations.size();j++) {
 					if(anwserRelations[i].equals(annotatedSent.relations[j])) {
 						ctCorrectRelation ++;
 						break;
 					}
 				}
-
 			}
-
-			for(int i=0;i<annotatedSent.relations.size();i++) {
-				int j=0;
-				for(;j<anwserRelations.size();j++) {
-					if(annotatedSent.relations[i].equals(anwserRelations[j])) {
-						break;
-					}
-				}
-
-				if(j>=anwserRelations.size()) {
-					fnRelations.push_back(annotatedSent.relations[i]);
-				}
-			}
-
-			for(int i=0;i<fnRelations.size();i++) {
-				bool entity1Matched = false;
-				bool entity2Matched = false;
-				for(int j=0;j<anwserEntities.size();j++) {
-					if(entity1Matched==false && fnRelations[i].entity1.equals(anwserEntities[j])) {
-						entity1Matched = true;
-					} else if(entity2Matched==false && fnRelations[i].entity2.equals(anwserEntities[j])) {
-						entity2Matched = true;
-					}
-				}
-
-			}
-
 
 		} // sent
 
@@ -573,77 +591,42 @@ public:
 		for(int sentIdx=0;sentIdx<processed.size();sentIdx++) {
 			const fox::Sent & sent = processed[sentIdx];
 			const ADEsentence & annotatedSent =annotated[sentIdx];
-			string lastNerLabel = nullkey;
-			vector<string> labelSequence;
 
 			vector<Entity> anwserEntities;
 			vector<Relation> anwserRelations;
 
-			for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
-				const fox::Token& token = sent.tokens[tokenIdx];
+			Prediction fakeGold(false);
+			Prediction predict = beamSearch(sent, fakeGold, m_options.beamSize1, 2);
 
-				Example eg(false);
-				string fakeLabelName = "";
-				generateOneNerExample(eg, fakeLabelName, sent, lastNerLabel, tokenIdx);
+			// add live_in to answer
+			for(int relationIdx=0;relationIdx<predict.relations.size();relationIdx++) {
+				const Relation& predictRelation = predict.relations[relationIdx];
+				const string& labelName = predict.labelNames[relationIdx+sent.tokens.size()];
 
-				vector<dtype> probs;
-				int predicted = m_classifier.predictNer(eg, probs);
+				if(ADE == labelName) {
+					anwserRelations.push_back(predictRelation);
+				}
+			}
 
-				string labelName = NERlabelID2labelName(predicted);
-				labelSequence.push_back(labelName);
+			// check entity that need to be deleted
+			for(int relationIdx=0;relationIdx<predict.relations.size();relationIdx++) {
+				const Relation& predictRelation = predict.relations[relationIdx];
+				const string& labelName = predict.labelNames[relationIdx+sent.tokens.size()];
 
-				// decode entity label
-				if(labelName == B_Disease || labelName == U_Disease ||
-						labelName == B_Chemical || labelName == U_Chemical ) {
-					Entity entity;
-					newEntity(token, labelName, entity);
-					anwserEntities.push_back(entity);
-				} else if(labelName == I_Disease || labelName == L_Disease ||
-						labelName == I_Chemical || labelName == L_Chemical ) {
-					if(checkWrongState(labelSequence)) {
-						Entity& entity = anwserEntities[anwserEntities.size()-1];
-						appendEntity(token, entity);
-					}
+				if(IMP_Disease == labelName && -1 == relationContainsEntity(anwserRelations, predictRelation.entity1)) {
+					// delete entity
+					deleteEntity(predict.entities, predictRelation.entity1);
+				} else if(IMP_Chemical == labelName && -1 == relationContainsEntity(anwserRelations, predictRelation.entity2)) {
+					// delete entity
+					deleteEntity(predict.entities, predictRelation.entity2);
 				}
 
-				lastNerLabel = labelName;
-			} // token
+			}
 
-
-			for(int bIdx=0;bIdx<anwserEntities.size();bIdx++) {
-				const Entity& bEntity = anwserEntities[bIdx];
-
-				// a is before b
-				for(int aIdx=0;aIdx<bIdx;aIdx++) {
-					const Entity& aEntity = anwserEntities[aIdx];
-
-					// type constraint
-					if(aEntity.type==bEntity.type)	{
-						continue;
-					}
-
-					const Entity& Disease = aEntity.type==TYPE_Disease? aEntity:bEntity;
-					const Entity& Chemical = aEntity.type==TYPE_Disease? bEntity:aEntity;
-
-					Example eg(true);
-					string fakeLabelName = "";
-					generateOneRelExample(eg, fakeLabelName, sent, Disease, Chemical, labelSequence);
-
-					vector<dtype> probs;
-					int predicted = m_classifier.predictRel(eg, probs);
-
-					string labelName = RellabelID2labelName(predicted);
-
-					// decode relation label
-					if(labelName == ADE) {
-						Relation relation;
-						newRelation(relation, Disease, Chemical);
-						anwserRelations.push_back(relation);
-					}
-
-				} // aIdx
-
-			} // bIdx
+			// add left entity to answer
+			for(int i=0;i<predict.entities.size();i++) {
+				anwserEntities.push_back(predict.entities[i]);
+			}
 
 			// evaluate by ourselves
 			ctGoldEntity += annotatedSent.entities.size();
@@ -737,9 +720,6 @@ public:
 		for(int i=0;i<sent.tokens.size();i++) {
 			eg._words.push_back(featureName2ID(m_wordAlphabet, feature_word(sent.tokens[i])));
 			eg._postags.push_back(featureName2ID(m_posAlphabet, feature_pos(sent.tokens[i])));
-			vector<int> chars;
-			featureName2ID(m_charAlphabet, feature_character(sent.tokens[i]), chars);
-			eg._seq_chars.push_back(chars);
 		}
 
 		eg._prior_ner = featureName2ID(m_nerAlphabet, lastNerLabel);
@@ -759,17 +739,12 @@ public:
 
 		int bacTkEnd = -1;
 		int locTkEnd = -1;
-		const Entity& former = Disease.begin<Chemical.begin? Disease:Chemical;
-		const Entity& latter = Disease.begin<Chemical.begin ? Chemical:Disease;
 
 		for(int i=0;i<sent.tokens.size();i++) {
 			const fox::Token& token = sent.tokens[i];
 
 			eg._words.push_back(featureName2ID(m_wordAlphabet, feature_word(token)));
 			eg._postags.push_back(featureName2ID(m_posAlphabet, feature_pos(token)));
-			vector<int> chars;
-			featureName2ID(m_charAlphabet, feature_character(sent.tokens[i]), chars);
-			eg._seq_chars.push_back(chars);
 			eg._deps.push_back(featureName2ID(m_depAlphabet, feature_dep(token)));
 			eg._ners.push_back(featureName2ID(m_nerAlphabet, labelSequence[i]));
 
@@ -791,14 +766,6 @@ public:
 				else if(locTkEnd < i /*&& sent.tokens[i].depGov!=-1*/)
 					locTkEnd = i;
 			}
-
-			if(isTokenBetweenTwoEntities(token, former, latter)) {
-				eg._between_words.push_back(i);
-			}
-		}
-
-		if(eg._between_words.size()==0) {
-			eg._between_words.push_back(featureName2ID(m_wordAlphabet, nullkey));
 		}
 
 		assert(bacTkEnd!=-1);
@@ -836,7 +803,6 @@ public:
 		hash_map<string, int> word_stat;
 		hash_map<string, int> pos_stat;
 		hash_map<string, int> dep_stat;
-		hash_map<string, int> char_stat;
 
 		for(int i=0;i<processed.size();i++) {
 			fox::Sent & sent = processed[i];
@@ -847,10 +813,6 @@ public:
 
 				string pos = feature_pos(sent.tokens[j]);
 				pos_stat[pos]++;
-
-				vector<string> characters = feature_character(sent.tokens[j]);
-				for(int i=0;i<characters.size();i++)
-					char_stat[characters[i]]++;
 
 				string dep = feature_dep(sent.tokens[j]);
 				dep_stat[dep]++;
@@ -864,8 +826,6 @@ public:
 		stat2Alphabet(pos_stat, m_posAlphabet, "pos");
 
 		stat2Alphabet(dep_stat, m_depAlphabet, "dep");
-
-		stat2Alphabet(char_stat, m_charAlphabet, "char");
 	}
 
 	string feature_word(const fox::Token& token) {
@@ -882,14 +842,6 @@ public:
 
 	string feature_dep(const fox::Token& token) {
 		return token.depType;
-	}
-
-	vector<string> feature_character(const fox::Token& token) {
-		vector<string> ret;
-		string word = feature_word(token);
-		for(int i=0;i<word.length();i++)
-			ret.push_back(word.substr(i, 1));
-		return ret;
 	}
 
 	void randomInitNrmat(NRMat<dtype>& nrmat, Alphabet& alphabet, int embSize, int seed) {

@@ -21,6 +21,8 @@
 
 using namespace std;
 
+#define USE_IMP 0
+
 // schema BILOU, three entity types (Bacteria,Habitat,Geographical)
 #define TYPE_Disease "Disease"
 #define TYPE_Chemical "Chemical"
@@ -94,28 +96,60 @@ string NERlabelID2labelName(const int labelID) {
 }
 
 // two relation type (Lives_In or not)
+#if USE_IMP
+
+	#define MAX_RELATION 4
+	#define ADE "ADE"
+	#define Not_ADE "Not_ADE"
+	#define IMP_Disease "IMP_Disease"
+	#define IMP_Chemical "IMP_Chemical"
+
+#else
+
 #define MAX_RELATION 2
 #define ADE "ADE"
 #define Not_ADE "Not_ADE"
 
-
+#endif
 
 int RellabelName2labelID(const string& labelName) {
+#if USE_IMP
 
+	if(labelName == ADE) {
+		return 0;
+	} else if(labelName == IMP_Disease)
+		return 1;
+	else if(labelName == IMP_Chemical)
+		return 2;
+	else
+		return 3;
+
+#else
 	if(labelName == ADE) {
 		return 0;
 	} else
 		return 1;
-
+#endif
 }
 
 string RellabelID2labelName(const int labelID) {
+#if USE_IMP
 
+	if(labelID == 0) {
+		return ADE;
+	} else if(labelID == 1)
+		return IMP_Disease;
+	else if(labelID == 2)
+		return IMP_Chemical;
+	else
+		return Not_ADE;
+
+#else
 	if(labelID == 0) {
 		return ADE;
 	} else
 		return Not_ADE;
-
+#endif
 }
 
 void newRelation(Relation& relation, const Entity& entity1, const Entity& entity2) {
