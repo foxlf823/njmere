@@ -1,15 +1,20 @@
 wordCutOff = 0
-maxIter = 10
+maxIter = 16
 adaAlpha = 0.03
 dropProb = 0
-wordEmbSize = 50
-otherEmbSize = 10
-rnnHiddenSize = 50
-hiddenSize = 50
+wordEmbSize = 200
+otherEmbSize = 25
+rnnHiddenSize = 100
+hiddenSize = 100
 evalPerIter = 1
-wordEmbFineTune = true
+wordEmbFineTune = false
+abbrPath = /home/fox/data/common_english_abbr_20160526.txt
+puncPath = /home/fox/data/english_punctuation.txt
 verboseIter = 1
-embFile = /home/fox/data/glove.6B.50d.bin
-
+embFile = /home/fox/data/PubMed-w2v.bin
+beamSize1 = 0
+beamSize2 = 0
+sent_window = 1
+poolType = 0
 
 

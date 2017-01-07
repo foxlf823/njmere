@@ -1,6 +1,6 @@
 
-#ifndef NNBB3_H_
-#define NNBB3_H_
+#ifndef NNBB3_error_H_
+#define NNBB3_error_H_
 
 #include <iosfwd>
 #include "Options.h"
@@ -21,31 +21,15 @@
 #include "Classifier3.h"
 #include "Example.h"
 
-#include "Classifier3_base.h"
-#include "Classifier3_char.h"
-#include "Classifier3_pos.h"
-#include "Classifier3_ner.h"
 
-#include "Classifier3_label.h"
-#include "Classifier3_dep.h"
-#include "Classifier3_entity.h"
-
-#include "Classifier3_nosdp.h"
-#include "Classifier3_nojoint.h"
-
-#include "Classifier3.h"
-#include "Classifier3_sublabel.h"
-#include "Classifier3_sublabel_dentity.h"
 
 
 using namespace nr;
 using namespace std;
 
-// a implement of ACL 2016 end-to-end relation extraction
-// use relation f1 on the development set
-// add char
+// error analysis on development set
 
-class NNbb3 {
+class NNbb3_error {
 public:
 	Options m_options;
 
@@ -61,22 +45,13 @@ public:
 #if USE_CUDA==1
   Classifier<gpu> m_classifier;
 #else
-  //Classifier3_base<cpu> m_classifier;
-  //Classifier3_char<cpu> m_classifier;
-  //Classifier3_pos<cpu> m_classifier;
-  //Classifier3_ner<cpu> m_classifier;
-  //Classifier3_label<cpu> m_classifier;
-  //Classifier3_dep<cpu> m_classifier;
-  //Classifier3_entity<cpu> m_classifier;
-  //Classifier3_nosdp<cpu> m_classifier;
-  //Classifier3_nojoint<cpu> m_classifier;
+
   Classifier3<cpu> m_classifier;
-  //Classifier3_sublabel<cpu> m_classifier;
-  //Classifier3_sublabel_dentity<cpu> m_classifier;
+
 #endif
 
 
-  NNbb3(const Options &options):m_options(options) {
+  NNbb3_error(const Options &options):m_options(options) {
 		unknownkey = "-#unknown#-";
 		nullkey = "-#null#-";
 	}
@@ -154,49 +129,29 @@ public:
 
 
 		NRMat<dtype> wordEmb;
-		if(m_options.wordEmbFineTune) {
-			if(m_options.embFile.empty()) {
-				cout<<"random emb"<<endl;
 
-				randomInitNrmat(wordEmb, m_wordAlphabet, m_options.wordEmbSize, 1000);
-			} else {
-				cout<< "load pre-trained emb"<<endl;
-				tool.w2v->loadFromBinFile(m_options.embFile, false, true);
+		if(m_options.embFile.empty()) {
+			cout<<"random emb"<<endl;
 
-				double* emb = new double[m_wordAlphabet.size()*m_options.wordEmbSize];
-				fox::initArray2((double *)emb, (int)m_wordAlphabet.size(), m_options.wordEmbSize, 0.0);
-				vector<string> known;
-				map<string, int> IDs;
-				alphabet2vectormap(m_wordAlphabet, known, IDs);
-
-				tool.w2v->getEmbedding((double*)emb, m_options.wordEmbSize, known, unknownkey, IDs);
-
-				wordEmb.resize(m_wordAlphabet.size(), m_options.wordEmbSize);
-				array2NRMat((double*) emb, m_wordAlphabet.size(), m_options.wordEmbSize, wordEmb);
-
-				delete[] emb;
-			}
+			randomInitNrmat(wordEmb, m_wordAlphabet, m_options.wordEmbSize, 1000);
 		} else {
-			if(m_options.embFile.empty()) {
-				assert(0);
-			} else {
-				cout<< "load pre-trained emb"<<endl;
-				tool.w2v->loadFromBinFile(m_options.embFile, false, true);
+			cout<< "load pre-trained emb"<<endl;
+			tool.w2v->loadFromBinFile(m_options.embFile, false, true);
 
-				double* emb = new double[m_wordAlphabet.size()*m_options.wordEmbSize];
-				fox::initArray2((double *)emb, (int)m_wordAlphabet.size(), m_options.wordEmbSize, 0.0);
-				vector<string> known;
-				map<string, int> IDs;
-				alphabet2vectormap(m_wordAlphabet, known, IDs);
+			double* emb = new double[m_wordAlphabet.size()*m_options.wordEmbSize];
+			fox::initArray2((double *)emb, (int)m_wordAlphabet.size(), m_options.wordEmbSize, 0.0);
+			vector<string> known;
+			map<string, int> IDs;
+			alphabet2vectormap(m_wordAlphabet, known, IDs);
 
-				tool.w2v->getEmbedding((double*)emb, m_options.wordEmbSize, known, unknownkey, IDs);
+			tool.w2v->getEmbedding((double*)emb, m_options.wordEmbSize, known, unknownkey, IDs);
 
-				wordEmb.resize(m_wordAlphabet.size(), m_options.wordEmbSize);
-				array2NRMat((double*) emb, m_wordAlphabet.size(), m_options.wordEmbSize, wordEmb);
+			wordEmb.resize(m_wordAlphabet.size(), m_options.wordEmbSize);
+			array2NRMat((double*) emb, m_wordAlphabet.size(), m_options.wordEmbSize, wordEmb);
 
-				delete[] emb;
-			}
+			delete[] emb;
 		}
+
 
 		NRMat<dtype> posEmb;
 		randomInitNrmat(posEmb, m_posAlphabet, m_options.otherEmbSize, 1010);
@@ -339,7 +294,9 @@ public:
 		    		averageUnkownEmb(m_charAlphabet, m_classifier._char, m_options.otherEmbSize);
 		    	}
 
-		    	evaluateOnDev(tool, devDocuments, metric_dev, iter);
+		    	if(iter == m_options.maxIter-1) {
+		    		evaluateOnDev(tool, devDocuments, metric_dev, iter);
+		    	}
 
 /*				if (metric_dev.getAccuracy() > best) {
 					cout << "Exceeds best performance of " << best << endl;
@@ -453,16 +410,13 @@ public:
 	void evaluateOnDev(Tool& tool, const vector<Document>& documents, Metric& metric_dev, int iter) {
     	metric_dev.reset();
 
-    	int ctGoldEntity = 0;
-    	int ctPredictEntity = 0;
-    	int ctCorrectEntity = 0;
-    	int ctGoldRelation = 0, ctPredictRelation = 0, ctCorrectRelation = 0;
 
     	int ct_fp1Entities = 0;
     	int ct_fp2Entities = 0;
     	int ct_fn1Entities = 0;
     	int ct_fn2Entities = 0;
     	int ct_fp1Relations = 0;
+    	int ct_fp2Relations = 0;
     	int ct_fn1Relations = 0;
     	int ct_fn2Relations = 0;
 
@@ -476,10 +430,10 @@ public:
 	    	vector<Entity> fn1Entities;
 	    	vector<Entity> fn2Entities;
 	    	vector<Relation> fp1Relations;
+	    	vector<Relation> fp2Relations;
 	    	vector<Relation> fn1Relations;
 	    	vector<Relation> fn2Relations;
 
-	    	vector<Relation> fnRelations;
 
 			for(int sentIdx=0;sentIdx<doc.sents.size();sentIdx++) {
 				const fox::Sent & sent = doc.sents[sentIdx];
@@ -564,97 +518,135 @@ public:
 			} // sent
 
 			// evaluate by ourselves
-			ctGoldEntity += doc.entities.size();
-			ctPredictEntity += anwserEntities.size();
 			for(int i=0;i<anwserEntities.size();i++) {
-				int k=-1;
 				int j=0;
 				for(;j<doc.entities.size();j++) {
 					if(anwserEntities[i].equalsBoundary(doc.entities[j])) {
-						if(anwserEntities[i].equalsType(doc.entities[j])) {
-							ctCorrectEntity ++;
-							break;
-						} else {
-							k = j;
-							break;
-						}
+						break;
 					}
 				}
 
 				if(j>=doc.entities.size()) { // boundary not match
 					fp1Entities.push_back(anwserEntities[i]);
-				} else if(k!=-1) {
-					fp2Entities.push_back(anwserEntities[i]); // type not match
+				} else  {
+					int k=0;
+					for(;k<doc.entities.size();k++)  {
+						if(anwserEntities[i].equals(doc.entities[k])) {
+							break;
+						}
+					}
+
+					if(k>=doc.entities.size()) {
+						fp2Entities.push_back(anwserEntities[i]); // type not match
+					} else {
+						// TP
+					}
+
 				}
 			}
 
 			for(int i=0;i<doc.entities.size();i++) {
-				int k=-1;
 				int j=0;
 				for(;j<anwserEntities.size();j++) {
 					if(doc.entities[i].equalsBoundary(anwserEntities[j])) {
-						if(doc.entities[i].equalsType(anwserEntities[j])) {
-							break;
-						} else {
-							k = j;
-							break;
-						}
+						break;
 					}
 
 				}
 
 				if(j>=anwserEntities.size()) { // boundary not match
 					fn1Entities.push_back(doc.entities[i]);
-				} else if(k!=-1) {
-					fn2Entities.push_back(doc.entities[i]); // type not match
+				} else {
+					int k=0;
+					for(;k<anwserEntities.size();k++)  {
+						if(doc.entities[i].equals(anwserEntities[k])) {
+							break;
+						}
+					}
+
+					if(k>=anwserEntities.size()) {
+						fn2Entities.push_back(doc.entities[i]); // type not match
+					} else {
+						// TP
+					}
+
 				}
 
 			}
 
-			ctGoldRelation += doc.relations.size();
-			ctPredictRelation += anwserRelations.size();
+
 			for(int i=0;i<anwserRelations.size();i++) {
-				int j=0;
-				for(;j<doc.relations.size();j++) {
-					if(anwserRelations[i].equals(doc.relations[j])) {
-						ctCorrectRelation ++;
-						break;
+				// try to match gold entities
+				bool entity1Matched = false;
+				bool entity2Matched = false;
+
+				for(int k=0;k<doc.entities.size();k++) {
+					if(entity1Matched==false && anwserRelations[i].bacteria.equals(doc.entities[k])) {
+						entity1Matched = true;
 					}
+					if(entity2Matched==false && anwserRelations[i].location.equals(doc.entities[k])) {
+						entity2Matched = true;
+					}
+
+					if(entity1Matched && entity2Matched)
+						break;
 				}
 
-				if(j>=doc.relations.size()) { // entity not match
+				if(!entity1Matched || !entity2Matched) {
 					fp1Relations.push_back(anwserRelations[i]);
+				} else {
+					// try to match gold relations
+
+					int j=0;
+					for(;j<doc.relations.size();j++) {
+						if(anwserRelations[i].equals(doc.relations[j])) {
+							break;
+						}
+					}
+
+					if(j>=doc.relations.size()) {
+						fp2Relations.push_back(anwserRelations[i]);
+					} else {
+						// TP
+					}
+
 				}
 			}
 
 			for(int i=0;i<doc.relations.size();i++) {
-				int j=0;
-				for(;j<anwserRelations.size();j++) {
-					if(doc.relations[i].equals(anwserRelations[j])) {
-						break;
-					}
-				}
-
-				if(j>=anwserRelations.size()) {
-					fnRelations.push_back(doc.relations[i]);
-				}
-			}
-
-			for(int i=0;i<fnRelations.size();i++) {
+				// try to match predicted entities
 				bool entity1Matched = false;
 				bool entity2Matched = false;
-				for(int j=0;j<anwserEntities.size();j++) {
-					if(entity1Matched==false && fnRelations[i].bacteria.equals(anwserEntities[j])) {
+
+				for(int k=0;k<anwserEntities.size();k++) {
+					if(entity1Matched==false && doc.relations[i].bacteria.equals(anwserEntities[k])) {
 						entity1Matched = true;
-					} else if(entity2Matched==false && fnRelations[i].location.equals(anwserEntities[j])) {
+					}
+					if(entity2Matched==false && doc.relations[i].location.equals(anwserEntities[k])) {
 						entity2Matched = true;
 					}
+
+					if(entity1Matched && entity2Matched)
+						break;
 				}
 
-				if(entity1Matched && entity2Matched) { // entity found but relation lost
-					fn2Relations.push_back(fnRelations[i]);
+				if(!entity1Matched || !entity2Matched) {
+					fn1Relations.push_back(doc.relations[i]);
 				} else {
-					fn1Relations.push_back(fnRelations[i]);
+					// try to match predicted relations
+					int j=0;
+					for(;j<anwserRelations.size();j++) {
+						if(doc.relations[i].equals(anwserRelations[j])) {
+							break;
+						}
+					}
+
+					if(j>=anwserRelations.size()) {
+						fn2Relations.push_back(doc.relations[i]);
+					} else {
+						// TP
+					}
+
 				}
 			}
 
@@ -665,58 +657,16 @@ public:
 		    	ct_fn1Entities += fn1Entities.size();
 		    	ct_fn2Entities += fn2Entities.size();
 		    	ct_fp1Relations += fp1Relations.size();
+		    	ct_fp2Relations += fp2Relations.size();
 		    	ct_fn1Relations += fn1Relations.size();
 		    	ct_fn2Relations += fn2Relations.size();
 
-				cout<<"### error analysis begin ### "<<doc.id<<endl;
-				cout<<"fp boundary not match "<<endl;
-				for(int i=0;i<fp1Entities.size();i++) {
-					cout<<fp1Entities[i].type<<", "<<fp1Entities[i].text<<", "<<fp1Entities[i].begin<<endl;
-				}
-				cout<<"fp type not match "<<endl;
-				for(int i=0;i<fp2Entities.size();i++) {
-					cout<<fp2Entities[i].type<<", "<<fp2Entities[i].text<<", "<<fp2Entities[i].begin<<endl;
-				}
-				cout<<"fn boundary not match "<<endl;
-				for(int i=0;i<fn1Entities.size();i++) {
-					cout<<fn1Entities[i].type<<", "<<fn1Entities[i].text<<", "<<fn1Entities[i].begin<<endl;
-				}
-				cout<<"fn type not match "<<endl;
-				for(int i=0;i<fn2Entities.size();i++) {
-					cout<<fn2Entities[i].type<<", "<<fn2Entities[i].text<<", "<<fn2Entities[i].begin<<endl;
-				}
-				cout<<"fp entity wrong "<<endl;
-				for(int i=0;i<fp1Relations.size();i++) {
-					cout<<fp1Relations[i].bacteria.type<<", "<<fp1Relations[i].bacteria.text<<", "<<fp1Relations[i].bacteria.begin
-						<<" ### "<<fp1Relations[i].location.type<<", "<<fp1Relations[i].location.text<<", "<<fp1Relations[i].location.begin
-							<<endl;
-				}
-				cout<<"fn entity not found "<<endl;
-				for(int i=0;i<fn1Relations.size();i++) {
-					cout<<fn1Relations[i].bacteria.type<<", "<<fn1Relations[i].bacteria.text<<", "<<fn1Relations[i].bacteria.begin
-						<<" ### "<<fn1Relations[i].location.type<<", "<<fn1Relations[i].location.text<<", "<<fn1Relations[i].location.begin
-							<<endl;
-				}
-				cout<<"fn entity found but relation lost "<<endl;
-				for(int i=0;i<fn2Relations.size();i++) {
-					cout<<fn2Relations[i].bacteria.type<<", "<<fn2Relations[i].bacteria.text<<", "<<fn2Relations[i].bacteria.begin
-						<<" ### "<<fn2Relations[i].location.type<<", "<<fn2Relations[i].location.text<<", "<<fn2Relations[i].location.begin
-							<<endl;
-				}
 
-
-				cout<<"### error analysis end ###"<<endl;
 			}
 
 		} // doc
 
-		cout<<"entity p: "<<precision(ctCorrectEntity, ctPredictEntity)<<", r:"<<recall(ctCorrectEntity, ctGoldEntity)<<", f1:"<<f1(ctCorrectEntity, ctGoldEntity, ctPredictEntity)<<endl;
-		cout<<"relation p: "<<precision(ctCorrectRelation, ctPredictRelation)<<", r:"<<recall(ctCorrectRelation, ctGoldRelation)<<", f1:"<<f1(ctCorrectRelation, ctGoldRelation, ctPredictRelation)<<endl;
 
-		metric_dev.overall_label_count = ctGoldRelation;
-		metric_dev.predicated_label_count = ctPredictRelation;
-		metric_dev.correct_label_count = ctCorrectRelation;
-		metric_dev.print();
 
 		if(iter == m_options.maxIter-1) {
 			cout<<"### error analysis begin ###"<<endl;
@@ -729,8 +679,10 @@ public:
 			cout<<"fn type not match "<<ct_fn2Entities/ctTotalError<<endl;
 
 
-			ctTotalError = ct_fp1Relations+ct_fn1Relations+ct_fn2Relations;
+			ctTotalError = ct_fp1Relations+ct_fp2Relations+ct_fn1Relations+ct_fn2Relations;
 			cout<<"fp entity wrong "<<ct_fp1Relations/ctTotalError<<endl;
+
+			cout<<"fp entity correct but relation wrong "<<ct_fp2Relations/ctTotalError<<endl;
 
 			cout<<"fn entity not found "<<ct_fn1Relations/ctTotalError<<endl;
 
@@ -739,103 +691,6 @@ public:
 
 			cout<<"### error analysis end ###"<<endl;
 		}
-	}
-
-	void test(Tool& tool, const vector<Document>& documents) {
-
-		for(int docIdx=0;docIdx<documents.size();docIdx++) {
-			const Document& doc = documents[docIdx];
-			vector<Entity> predictEntities;
-			vector<Relation> predictRelations;
-			int entityId = doc.maxParagraphId+1;
-			int relationId = 1;
-
-			for(int sentIdx=0;sentIdx<doc.sents.size();sentIdx++) {
-				const fox::Sent & sent = doc.sents[sentIdx];
-				string lastNerLabel = nullkey;
-				vector<string> labelSequence;
-
-				for(int tokenIdx=0;tokenIdx<sent.tokens.size();tokenIdx++) {
-					const fox::Token& token = sent.tokens[tokenIdx];
-
-					Example eg(false);
-					string fakeLabelName = "";
-					generateOneNerExample(eg, fakeLabelName, sent, lastNerLabel, tokenIdx);
-
-					vector<dtype> probs;
-					int predicted = m_classifier.predictNer(eg, probs);
-
-					string labelName = NERlabelID2labelName(predicted);
-					labelSequence.push_back(labelName);
-
-					// decode entity label
-					if(labelName == B_Bacteria || labelName == U_Bacteria ||
-							labelName == B_Habitat || labelName == U_Habitat ||
-							labelName == B_Geographical || labelName == U_Geographical) {
-						Entity entity;
-						newEntity(token, labelName, entity, entityId);
-						predictEntities.push_back(entity);
-						entityId++;
-					} else if(labelName == I_Bacteria || labelName == L_Bacteria ||
-							labelName == I_Habitat || labelName == L_Habitat ||
-							labelName == I_Geographical || labelName == L_Geographical) {
-						if(checkWrongState(labelSequence)) {
-							Entity& entity = predictEntities[predictEntities.size()-1];
-							appendEntity(token, entity);
-						}
-					}
-
-					lastNerLabel = labelName;
-				} // token
-
-				// begin to relation
-				vector<Entity> tempEntities;
-				findEntityInSent(sent.begin, sent.end, predictEntities, tempEntities);
-
-				for(int bIdx=0;bIdx<tempEntities.size();bIdx++) {
-					const Entity& bEntity = tempEntities[bIdx];
-
-					// a is before b
-					for(int aIdx=0;aIdx<bIdx;aIdx++) {
-						const Entity& aEntity = tempEntities[aIdx];
-
-						// type constraint
-						if((aEntity.type==bEntity.type) || (aEntity.type==TYPE_Hab && bEntity.type==TYPE_Geo) ||
-								(aEntity.type==TYPE_Geo && bEntity.type==TYPE_Hab))	{
-							continue;
-						}
-
-						const Entity& bacteria = aEntity.type==TYPE_Bac? aEntity:bEntity;
-						const Entity& location = aEntity.type==TYPE_Bac? bEntity:aEntity;
-
-						Example eg(true);
-						string fakeLabelName = "";
-						generateOneRelExample(eg, fakeLabelName, sent, bacteria, location, labelSequence);
-
-						vector<dtype> probs;
-						int predicted = m_classifier.predictRel(eg, probs);
-
-						string labelName = RellabelID2labelName(predicted);
-						labelSequence.push_back(labelName);
-
-						// decode relation label
-						if(labelName == Lives_In) {
-							Relation relation;
-							newRelation(relation, bacteria, location, relationId);
-							predictRelations.push_back(relation);
-							relationId++;
-						}
-
-					} // aIdx
-
-				} // bIdx
-
-
-			} // sent
-
-			outputResults(doc.id, predictEntities, predictRelations, m_options.output);
-		} // doc
-
 	}
 
 	// Only used when current label is I or L, check state from back to front

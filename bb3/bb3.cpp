@@ -17,10 +17,22 @@
 #include "Options.h"
 #include "Tool.h"
 
+#if USE_IMP
 
+#include "NNbb_imp.h"
+#include "NNbb_1beam_early.h"
+
+#else
+
+#include "NNbb_ner.h"
+#include "NNbb.h"
+#include "NNbb_multisent.h"
+#include "NNbb_coref.h"
+#include "NNbb2.h"
 #include "NNbb3.h"
+#include "NNbb3_error.h"
 
-
+#endif
 
 using namespace std;
 
@@ -77,7 +89,14 @@ int main(int argc, char **argv)
 	Tool tool(options);
 
 
-	NNbb3 nnbb(options);
+	//NNbb_1beam_early nnbb(options);
+	//NNbb_multisent nnbb(options);
+	//NNbb_coref nnbb(options);
+	//NNbb_imp nnbb(options);
+	//NNbb nnbb(options);
+	//NNbb2 nnbb(options);
+	//NNbb3 nnbb(options);
+	NNbb3_error nnbb(options);
 
 	nnbb.trainAndTest(trainFile, devFile, testFile, tool,
 			trainNlpFile, devNlpFile, testNlpFile);
