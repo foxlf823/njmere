@@ -1,5 +1,5 @@
 wordCutOff = 0
-maxIter = 16
+maxIter = 300
 adaAlpha = 0.03
 dropProb = 0
 wordEmbSize = 200
@@ -7,14 +7,14 @@ otherEmbSize = 25
 rnnHiddenSize = 100
 hiddenSize = 100
 evalPerIter = 1
-wordEmbFineTune = false
-abbrPath = /home/fox/data/common_english_abbr_20160526.txt
-puncPath = /home/fox/data/english_punctuation.txt
+wordEmbFineTune = true
+abbrPath = 
+puncPath = 
 verboseIter = 1
-embFile = /home/fox/data/PubMed-w2v.bin
-beamSize1 = 0
-beamSize2 = 0
-sent_window = 1
+embFile = 
+wordcontext = 0
+regParameter = 0.00000001
+batchSize = 1
 poolType = 0
 
 

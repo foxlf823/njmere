@@ -15,9 +15,7 @@ libs = -lm -lopenblas -Wl,-rpath,./ \
  
 all: bb3
 
-bb3: bb3.cpp Entity.h Relation.h Document.h Tool.h Options.h utils.h NNbb_ner.h ClassifierNer.h \
-	NNbb.h Classifier.h beamsearch.h Prediction.h NNbb_1beam_early.h NNbb_multisent.h Coreference.h \
-	NNbb_coref.h ClassifierAtt.h Attention_ZhouACL2016.h CNN.h ClassifierCNN.h NNbb3_error.h
+bb3: bb3.cpp Entity.h Relation.h Document.h Tool.h Options.h utils.h NNbb3.h 
 	$(cc) -o bb3 bb3.cpp $(cflags) $(libs)
 
 	

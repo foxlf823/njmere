@@ -18,20 +18,9 @@
 #include "Tool.h"
 #include "BestPerformance.h"
 
-#if USE_IMP
 
-#include "NNade_imp.h"
-#include "NNade_imp_beam.h"
-
-#else
-
-#include "NNade.h"
-#include "NNade_beam.h"
 #include "NNade3.h"
-#include "NNade3_error.h"
-#include "NNade_cooccur.h"
 
-#endif
 
 using namespace std;
 
@@ -94,13 +83,8 @@ int main(int argc, char **argv)
 		}*/
 		cout<<"###### group ###### "<<crossValid<<endl;
 
-		//NNade nnade(options);
-		//NNade_imp nnade(options);
-		//NNade_imp_beam nnade(options);
-		//NNade_beam nnade(options);
-		//NNade3 nnade(options);
-		NNade3_error nnade(options);
-		//NNade_cooccur nnade(options);
+		NNade3 nnade(options);
+
 
 		// crossValid as test, crossValid+1 as dev, other as train
 		vector<fox::Sent> processedTest;
@@ -134,7 +118,7 @@ int main(int argc, char **argv)
 		bestAll.push_back(best);
 	}
 
-	//if(currentFold<0) {
+	if(currentFold<0) {
 		// marcro-average
 		double pDev_Entity = 0;
 		double rDev_Entity = 0;
@@ -182,7 +166,7 @@ int main(int argc, char **argv)
 		cout<<"test relation r "<<rTest_Relation<<endl;
 		cout<<"test relation f1 "<<f1Test_Relation<<endl;
 
-	//}
+	}
 
 
 

@@ -58,20 +58,6 @@ public:
 		ss<<"T"<<_id;
 		id = ss.str();
 	  }
-
-		bool equalsBoundary(const Entity& another) const {
-			if(begin == another.begin && end == another.end)
-				return true;
-			else
-				return false;
-		}
-
-		bool equalsType(const Entity& another) const {
-			if(type == another.type)
-				return true;
-			else
-				return false;
-		}
 };
 
 

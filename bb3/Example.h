@@ -42,8 +42,6 @@ public:
   hash_set<int> _idx_e1;
   hash_set<int> _idx_e2;
 
-  vector<int> _between_words;
-
 public:
   Example(bool isrel)
   {

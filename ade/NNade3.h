@@ -19,17 +19,6 @@
 #include "utils.h"
 #include "Example.h"
 #include "BestPerformance.h"
-#include "Classifier3_base.h"
-#include "Classifier3_char.h"
-#include "Classifier3_pos.h"
-#include "Classifier3_ner.h"
-
-#include "Classifier3_label.h"
-#include "Classifier3_dep.h"
-#include "Classifier3_entity.h"
-
-#include "Classifier3_nosdp.h"
-#include "Classifier3_nojoint.h"
 
 #include "Classifier3.h"
 

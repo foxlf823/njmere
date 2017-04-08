@@ -15,9 +15,7 @@ libs = -lm -lopenblas -Wl,-rpath,./ \
  
 all: ade
 
-ade: ade.cpp Entity.h Relation.h Tool.h Options.h utils.h \
-	NNade.h Classifier.h beamsearch.h Prediction.h NNade_imp.h NNade_imp_beam.h \
-	NNade3_error.h
+ade: ade.cpp Entity.h Relation.h Tool.h Options.h utils.h 
 	$(cc) -o ade ade.cpp $(cflags) $(libs)
 
 	

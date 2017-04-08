@@ -7,7 +7,6 @@
 #include <assert.h>
 #include "N3L.h"
 #include "Example.h"
-#include "Prediction.h"
 #include "CNN.h"
 
 using namespace nr;
@@ -19,7 +18,13 @@ using namespace mshadow::utils;
 
 template<typename xpu>
 class Classifier3 {
+public:
+	Classifier3() {
 
+  }
+  ~Classifier3() {
+
+  }
 
 public:
   LookupTable<xpu> _words;
@@ -75,7 +80,7 @@ public:
 	  _ner_hidden_outputsize = options.hiddenSize;
 	  _nerlabelSize = MAX_ENTITY;
 
-	  _cnn_char.initial(_otherDim, _otherDim, 3, options.poolType, 0, 5);
+	  _cnn_char.initial(_otherDim, _otherDim, 1, options.poolType, 0, 5);
 
 	  _nerrnn_left.initial(_nerrnn_outputsize, _nerrnn_inputsize, true, 10);
 	  _nerrnn_right.initial(_nerrnn_outputsize, _nerrnn_inputsize, false, 20);
@@ -84,9 +89,9 @@ public:
 
 
 	  _rellabelSize = MAX_RELATION;
-	  _relrnn_inputsize = _nerrnn_outputsize*2 + _otherDim; // birnn+dep
+	  _relrnn_inputsize = _nerrnn_outputsize*2 + _otherDim + _otherDim; // birnn+dep+ner
 	  _relrnn_outputsize = options.rnnHiddenSize;
-	  _rel_hidden_inputsize = _relrnn_outputsize*4 + _nerrnn_outputsize*4; // e12a+e22a+a2e1+a2e2+e1+e2
+	  _rel_hidden_inputsize = _relrnn_outputsize*4 + _nerrnn_outputsize*2 + _nerrnn_outputsize*2; // e12a+e22a+a2e1+a2e2+e1+e2
 	  _rel_hidden_outputsize = options.hiddenSize;
 	  _relrnn_bottomup.initial(_relrnn_outputsize, _relrnn_inputsize, true, 50);
 	  _relrnn_topdown.initial(_relrnn_outputsize, _relrnn_inputsize, false, 60);
@@ -152,6 +157,7 @@ public:
       Tensor<xpu, 2, dtype> pool_e2, pool_e2_Loss;
       Tensor<xpu, 3, dtype> poolIndex_e2;
 
+      Tensor<xpu, 3, dtype> nerprime, nerprimeLoss, nerprimeMask;
       Tensor<xpu, 3, dtype> depprime, depprimeLoss, depprimeMask;
 
       vector< Tensor<xpu, 2, dtype> > relrnn_input_sdp_e1, relrnn_input_sdp_e1_Loss;
@@ -229,6 +235,9 @@ public:
       pool_e2_Loss = NewTensor<xpu>(Shape2(1, _nerrnn_outputsize*2), 0.0);
       poolIndex_e2 = NewTensor<xpu>(Shape3(seq_size, 1, _nerrnn_outputsize*2), 0.0);
 
+      nerprime = NewTensor<xpu>(Shape3(seq_size, 1, _otherDim), 0.0);
+      nerprimeLoss = NewTensor<xpu>(Shape3(seq_size, 1, _otherDim), 0.0);
+      nerprimeMask = NewTensor<xpu>(Shape3(seq_size, 1, _otherDim), 1.0);
 
       depprime = NewTensor<xpu>(Shape3(seq_size, 1, _otherDim), 0.0);
       depprimeLoss = NewTensor<xpu>(Shape3(seq_size, 1, _otherDim), 0.0);
@@ -313,6 +322,11 @@ public:
 			   depprime[idx] = depprime[idx] * depprimeMask[idx];
 		   }
 
+		   _ner.GetEmb(example._ners[idx], nerprime[idx]);
+		   if(options.dropProb != 0) {
+			   dropoutcol(nerprimeMask[idx], options.dropProb);
+			   nerprime[idx] = nerprime[idx] * nerprimeMask[idx];
+		   }
 
 		   for(int i=0;i<example._seq_chars[idx].size();i++) {
 			   _char.GetEmb(example._seq_chars[idx][i], charprime[idx][i]);
@@ -326,7 +340,6 @@ public:
 
 
 		   concat(wordprime[idx], posprime[idx], cnn_output[idx], nerrnn_input[idx]);
-
       }
 
       _nerrnn_left.ComputeForwardScore(nerrnn_input, nerrnn_hidden_left_iy, nerrnn_hidden_left_oy, nerrnn_hidden_left_fy,
@@ -343,14 +356,12 @@ public:
 
       for(int i=0;i<sdp_e1_size;i++) {
     	  int idx = example._idxOnSDP_E12A[i];
-    	  concat(nerrnn_hidden_merge[idx], depprime[idx], relrnn_input_sdp_e1[i]);
-
+    	  concat(nerrnn_hidden_merge[idx], depprime[idx], nerprime[idx], relrnn_input_sdp_e1[i]);
       }
 
       for(int i=0;i<sdp_e2_size;i++) {
     	  int idx = example._idxOnSDP_E22A[i];
-    	  concat(nerrnn_hidden_merge[idx], depprime[idx], relrnn_input_sdp_e2[i]);
-
+    	  concat(nerrnn_hidden_merge[idx], depprime[idx], nerprime[idx], relrnn_input_sdp_e2[i]);
       }
 
       _relrnn_bottomup.ComputeForwardScore(relrnn_input_sdp_e1, relrnn_hidden_bottomup_e1_iy, relrnn_hidden_bottomup_e1_oy, relrnn_hidden_bottomup_e1_fy,
@@ -386,7 +397,6 @@ public:
 			  pool_e1_Loss, pool_e2_Loss, hidden_inputLoss);
 
 
-
       _relrnn_bottomup.ComputeBackwardLoss(relrnn_input_sdp_e1, relrnn_hidden_bottomup_e1_iy, relrnn_hidden_bottomup_e1_oy, relrnn_hidden_bottomup_e1_fy,
     		  relrnn_hidden_bottomup_e1_mcy, relrnn_hidden_bottomup_e1_cy, relrnn_hidden_bottomup_e1_my, relrnn_hidden_bottomup_e1,
 			  relrnn_hidden_bottomup_e1_Loss, relrnn_input_sdp_e1_Loss);
@@ -404,14 +414,12 @@ public:
 
       for(int i=0;i<sdp_e1_size;i++) {
     	  int idx = example._idxOnSDP_E12A[i];
-    	  unconcat(nerrnn_hidden_mergeLoss[idx], depprimeLoss[idx], relrnn_input_sdp_e1_Loss[i]);
-
+    	  unconcat(nerrnn_hidden_mergeLoss[idx], depprimeLoss[idx], nerprimeLoss[idx], relrnn_input_sdp_e1_Loss[i]);
       }
 
       for(int i=0;i<sdp_e2_size;i++) {
     	  int idx = example._idxOnSDP_E22A[i];
-    	  unconcat(nerrnn_hidden_mergeLoss[idx], depprimeLoss[idx], relrnn_input_sdp_e2_Loss[i]);
-
+    	  unconcat(nerrnn_hidden_mergeLoss[idx], depprimeLoss[idx], nerprimeLoss[idx], relrnn_input_sdp_e2_Loss[i]);
       }
 
       pool_backward(pool_e1_Loss, poolIndex_e1,  nerrnn_hidden_mergeLoss);
@@ -444,6 +452,9 @@ public:
 				depprimeLoss[idx] = depprimeLoss[idx] * depprimeMask[idx];
 			_dep.EmbLoss(example._deps[idx], depprimeLoss[idx]);
 
+			if(options.dropProb != 0)
+				nerprimeLoss[idx] = nerprimeLoss[idx] * nerprimeMask[idx];
+			_ner.EmbLoss(example._ners[idx], nerprimeLoss[idx]);
 
 			_cnn_char.ComputeBackwardLoss(charprime[idx], cnn_output[idx], cnn_output_loss[idx], charprimeLoss[idx], cnn_kernelInputs[idx], cnn_kernelOutputs[idx], cnn_poolIndex[idx]);
 
@@ -505,6 +516,10 @@ public:
       FreeSpace(&pool_e2);
       FreeSpace(&pool_e2_Loss);
       FreeSpace(&poolIndex_e2);
+
+      FreeSpace(&nerprime);
+      FreeSpace(&nerprimeLoss);
+      FreeSpace(&nerprimeMask);
 
       FreeSpace(&depprime);
       FreeSpace(&depprimeLoss);
@@ -600,6 +615,7 @@ public:
       Tensor<xpu, 2, dtype> pool_e2;
       Tensor<xpu, 3, dtype> poolIndex_e2;
 
+      Tensor<xpu, 3, dtype> nerprime;
       Tensor<xpu, 3, dtype> depprime;
 
       vector< Tensor<xpu, 2, dtype> > relrnn_input_sdp_e1;
@@ -663,6 +679,8 @@ public:
       pool_e2 = NewTensor<xpu>(Shape2(1, _nerrnn_outputsize*2), 0.0);
       poolIndex_e2 = NewTensor<xpu>(Shape3(seq_size, 1, _nerrnn_outputsize*2), 0.0);
 
+      nerprime = NewTensor<xpu>(Shape3(seq_size, 1, _otherDim), 0.0);
+
       depprime = NewTensor<xpu>(Shape3(seq_size, 1, _otherDim), 0.0);
 
       for(int i=0;i<sdp_e1_size;i++) {
@@ -720,6 +738,8 @@ public:
 
 		   _dep.GetEmb(example._deps[idx], depprime[idx]);
 
+		   _ner.GetEmb(example._ners[idx], nerprime[idx]);
+
 		   for(int i=0;i<example._seq_chars[idx].size();i++) {
 			   _char.GetEmb(example._seq_chars[idx][i], charprime[idx][i]);
 		   }
@@ -728,7 +748,6 @@ public:
 
 
 		   concat(wordprime[idx], posprime[idx], cnn_output[idx], nerrnn_input[idx]);
-
       }
 
       _nerrnn_left.ComputeForwardScore(nerrnn_input, nerrnn_hidden_left_iy, nerrnn_hidden_left_oy, nerrnn_hidden_left_fy,
@@ -745,14 +764,12 @@ public:
 
       for(int i=0;i<sdp_e1_size;i++) {
     	  int idx = example._idxOnSDP_E12A[i];
-    	  concat(nerrnn_hidden_merge[idx], depprime[idx], relrnn_input_sdp_e1[i]);
-
+    	  concat(nerrnn_hidden_merge[idx], depprime[idx], nerprime[idx], relrnn_input_sdp_e1[i]);
       }
 
       for(int i=0;i<sdp_e2_size;i++) {
     	  int idx = example._idxOnSDP_E22A[i];
-    	  concat(nerrnn_hidden_merge[idx], depprime[idx], relrnn_input_sdp_e2[i]);
-
+    	  concat(nerrnn_hidden_merge[idx], depprime[idx], nerprime[idx], relrnn_input_sdp_e2[i]);
       }
 
       _relrnn_bottomup.ComputeForwardScore(relrnn_input_sdp_e1, relrnn_hidden_bottomup_e1_iy, relrnn_hidden_bottomup_e1_oy, relrnn_hidden_bottomup_e1_fy,
@@ -775,8 +792,7 @@ public:
       _rel_output_layer.ComputeForwardScore(hidden_output, output);
 
 
-      int optLabel = -1;
-      softmax_predict(output, optLabel);
+      int optLabel = softmax_predict(output, results);
 
 
       //release
@@ -786,7 +802,6 @@ public:
 
       for (int idx = 0; idx < seq_size; idx++) {
     	  FreeSpace(&(charprime[idx]));
-    	  FreeSpace(&(cnn_output[idx]));
     	  FreeSpace(&(cnn_kernelInputs[idx]));
     	  FreeSpace(&(cnn_kernelOutputs[idx]));
     	  FreeSpace(&(cnn_poolIndex[idx]));
@@ -817,6 +832,8 @@ public:
       FreeSpace(&poolIndex_e1);
       FreeSpace(&pool_e2);
       FreeSpace(&poolIndex_e2);
+
+      FreeSpace(&nerprime);
 
       FreeSpace(&depprime);
 
@@ -991,7 +1008,6 @@ public:
 
 
 		   concat(wordprime[idx], posprime[idx], cnn_output[idx], nerrnn_input[idx]);
-
       }
 
       _nerrnn_left.ComputeForwardScore(nerrnn_input, nerrnn_hidden_left_iy, nerrnn_hidden_left_oy, nerrnn_hidden_left_fy,
@@ -1025,7 +1041,6 @@ public:
       if(options.dropProb != 0)
     	  nerprimeLoss = nerprimeLoss * nerprimeMask;
       _ner.EmbLoss(example._prior_ner, nerprimeLoss);
-
 
       _nerrnn_left.ComputeBackwardLoss(nerrnn_input, nerrnn_hidden_left_iy, nerrnn_hidden_left_oy, nerrnn_hidden_left_fy,
     		  nerrnn_hidden_left_mcy, nerrnn_hidden_left_cy, nerrnn_hidden_left_my, nerrnn_hidden_left,
@@ -1201,7 +1216,6 @@ public:
 
 
 			   concat(wordprime[idx], posprime[idx], cnn_output[idx], nerrnn_input[idx]);
-
 	      }
 
 	      _nerrnn_left.ComputeForwardScore(nerrnn_input, nerrnn_hidden_left_iy, nerrnn_hidden_left_oy, nerrnn_hidden_left_fy,
@@ -1209,7 +1223,7 @@ public:
 	      _nerrnn_right.ComputeForwardScore(nerrnn_input, nerrnn_hidden_right_iy, nerrnn_hidden_right_oy, nerrnn_hidden_right_fy,
 	          		  nerrnn_hidden_right_mcy, nerrnn_hidden_right_cy, nerrnn_hidden_right_my, nerrnn_hidden_right);
 
-	      _ner.GetEmb(example._prior_ner, nerprime);
+		   _ner.GetEmb(example._prior_ner, nerprime);
 
 	      concat(nerrnn_hidden_left[example._current_idx], nerrnn_hidden_right[example._current_idx], nerprime, hidden_input);
 
@@ -1217,8 +1231,8 @@ public:
 
 	      _ner_olayer_linear.ComputeForwardScore(hidden_output, output);
 
-	      int optLabel = -1;
-	      softmax_predict(output, optLabel);
+		// decode algorithm
+	      int optLabel = softmax_predict(output, results);
 
 	      //release
 	      FreeSpace(&wordprime);
@@ -1227,7 +1241,6 @@ public:
 
 	      for (int idx = 0; idx < seq_size; idx++) {
 	    	  FreeSpace(&(charprime[idx]));
-	    	  FreeSpace(&(cnn_output[idx]));
 	    	  FreeSpace(&(cnn_kernelInputs[idx]));
 	    	  FreeSpace(&(cnn_kernelOutputs[idx]));
 	    	  FreeSpace(&(cnn_poolIndex[idx]));
@@ -1286,7 +1299,7 @@ public:
       Tensor<xpu, 3, dtype> nerrnn_hidden_right_iy, nerrnn_hidden_right_oy, nerrnn_hidden_right_fy,
 	  	  nerrnn_hidden_right_mcy, nerrnn_hidden_right_cy, nerrnn_hidden_right_my;
 
-      //Tensor<xpu, 3, dtype> nerrnn_hidden_merge;
+      Tensor<xpu, 3, dtype> nerrnn_hidden_merge;
 
       Tensor<xpu, 2, dtype> pool_e1;
       Tensor<xpu, 3, dtype> poolIndex_e1;
@@ -1350,12 +1363,12 @@ public:
       nerrnn_hidden_right_my = NewTensor<xpu>(Shape3(seq_size, 1, _nerrnn_outputsize), 0.0);
       nerrnn_hidden_right = NewTensor<xpu>(Shape3(seq_size, 1, _nerrnn_outputsize), 0.0);
 
-      //nerrnn_hidden_merge = NewTensor<xpu>(Shape3(seq_size, 1, _nerrnn_outputsize*2), 0.0);
+      nerrnn_hidden_merge = NewTensor<xpu>(Shape3(seq_size, 1, _nerrnn_outputsize*2), 0.0);
 
-      pool_e1 = NewTensor<xpu>(Shape2(1, _nerrnn_outputsize), 0.0);
-      poolIndex_e1 = NewTensor<xpu>(Shape3(seq_size, 1, _nerrnn_outputsize), 0.0);
-      pool_e2 = NewTensor<xpu>(Shape2(1, _nerrnn_outputsize), 0.0);
-      poolIndex_e2 = NewTensor<xpu>(Shape3(seq_size, 1, _nerrnn_outputsize), 0.0);
+      pool_e1 = NewTensor<xpu>(Shape2(1, _nerrnn_outputsize*2), 0.0);
+      poolIndex_e1 = NewTensor<xpu>(Shape3(seq_size, 1, _nerrnn_outputsize*2), 0.0);
+      pool_e2 = NewTensor<xpu>(Shape2(1, _nerrnn_outputsize*2), 0.0);
+      poolIndex_e2 = NewTensor<xpu>(Shape3(seq_size, 1, _nerrnn_outputsize*2), 0.0);
 
       nerprime = NewTensor<xpu>(Shape3(seq_size, 1, _otherDim), 0.0);
 
@@ -1426,7 +1439,6 @@ public:
 
 
 		   concat(wordprime[idx], posprime[idx], cnn_output[idx], nerrnn_input[idx]);
-
       }
 
       _nerrnn_left.ComputeForwardScore(nerrnn_input, nerrnn_hidden_left_iy, nerrnn_hidden_left_oy, nerrnn_hidden_left_fy,
@@ -1434,23 +1446,21 @@ public:
       _nerrnn_right.ComputeForwardScore(nerrnn_input, nerrnn_hidden_right_iy, nerrnn_hidden_right_oy, nerrnn_hidden_right_fy,
           		  nerrnn_hidden_right_mcy, nerrnn_hidden_right_cy, nerrnn_hidden_right_my, nerrnn_hidden_right);
 
-/*      for(int i=0;i<seq_size;i++) {
+      for(int i=0;i<seq_size;i++) {
     	  concat(nerrnn_hidden_left[i], nerrnn_hidden_right[i], nerrnn_hidden_merge[i]);
-      }*/
+      }
 
-      avgpool_forward(nerrnn_hidden_left, pool_e1, poolIndex_e1, example._idx_e1);
-      avgpool_forward(nerrnn_hidden_left, pool_e2, poolIndex_e2, example._idx_e2);
+      avgpool_forward(nerrnn_hidden_merge, pool_e1, poolIndex_e1, example._idx_e1);
+      avgpool_forward(nerrnn_hidden_merge, pool_e2, poolIndex_e2, example._idx_e2);
 
       for(int i=0;i<sdp_e1_size;i++) {
     	  int idx = example._idxOnSDP_E12A[i];
-    	  concat(nerrnn_hidden_left[idx], nerrnn_hidden_right[idx], depprime[idx], nerprime[idx], relrnn_input_sdp_e1[i]);
-
+    	  concat(nerrnn_hidden_merge[idx], depprime[idx], nerprime[idx], relrnn_input_sdp_e1[i]);
       }
 
       for(int i=0;i<sdp_e2_size;i++) {
     	  int idx = example._idxOnSDP_E22A[i];
-    	  concat(nerrnn_hidden_left[idx], nerrnn_hidden_right[idx], depprime[idx], nerprime[idx], relrnn_input_sdp_e2[i]);
-
+    	  concat(nerrnn_hidden_merge[idx], depprime[idx], nerprime[idx], relrnn_input_sdp_e2[i]);
       }
 
       _relrnn_bottomup.ComputeForwardScore(relrnn_input_sdp_e1, relrnn_hidden_bottomup_e1_iy, relrnn_hidden_bottomup_e1_oy, relrnn_hidden_bottomup_e1_fy,
@@ -1483,7 +1493,6 @@ public:
 
       for (int idx = 0; idx < seq_size; idx++) {
     	  FreeSpace(&(charprime[idx]));
-    	  FreeSpace(&(cnn_output[idx]));
     	  FreeSpace(&(cnn_kernelInputs[idx]));
     	  FreeSpace(&(cnn_kernelOutputs[idx]));
     	  FreeSpace(&(cnn_poolIndex[idx]));
@@ -1508,7 +1517,7 @@ public:
       FreeSpace(&nerrnn_hidden_right_my);
       FreeSpace(&nerrnn_hidden_right);
 
-      //FreeSpace(&nerrnn_hidden_merge);
+      FreeSpace(&nerrnn_hidden_merge);
 
       FreeSpace(&pool_e1);
       FreeSpace(&poolIndex_e1);

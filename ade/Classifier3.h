@@ -7,7 +7,6 @@
 #include <assert.h>
 #include "N3L.h"
 #include "Example.h"
-#include "Prediction.h"
 #include "CNN.h"
 
 using namespace nr;

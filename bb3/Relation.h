@@ -24,7 +24,7 @@ public:
 	  Entity bacteria;
 	  Entity location;
 
-	  bool equals(const Relation& another) const {
+	  bool equals(const Relation& another) {
 		  if(bacteria.equals(another.bacteria) && location.equals(another.location))
 			  return true;
 		  else
